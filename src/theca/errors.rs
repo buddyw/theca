@@ -49,7 +49,7 @@ impl StdError for Error {
         &self.desc
     }
 
-    fn cause(&self) -> Option<&StdError> {
+    fn cause(&self) -> Option<&dyn StdError> {
         match self.kind {
             ErrorKind::Term(ref e) => Some(e),
             ErrorKind::InternalIo(ref e) => Some(e),

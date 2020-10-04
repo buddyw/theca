@@ -207,7 +207,7 @@ pub fn get_yn_input(message: &str) -> Result<bool> {
     get_yn_input_with_output(stdout, message)
 }
 
-pub fn get_yn_input_with_output<W: Write>(mut terminal: Box<term::Terminal<Output = W>>,
+pub fn get_yn_input_with_output<W: Write>(mut terminal: Box<dyn term::Terminal<Output = W>>,
                                           message: &str)
                                           -> Result<bool> {
     write!(terminal, "{}", message)?;
@@ -235,7 +235,7 @@ pub fn get_yn_input_with_output<W: Write>(mut terminal: Box<term::Terminal<Outpu
     Ok(answer)
 }
 
-pub fn get_stdout() -> Result<Box<term::Terminal<Output = ::std::io::Stdout>>> {
+pub fn get_stdout() -> Result<Box<dyn term::Terminal<Output = ::std::io::Stdout>>> {
     match stdout() {
         Some(t) => Ok(t),
         None => specific_fail_str!("could not retrieve standard output."),
