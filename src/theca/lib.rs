@@ -30,8 +30,7 @@ use std::env;
 use std::default::Default;
 
 // theca imports
-use utils::{find_profile_folder, get_password, profiles_in_folder, profile_fingerprint,
-            extract_status};
+use utils::{find_profile_folder, get_password, profiles_in_folder, extract_status};
 use errors::Result;
 
 pub use self::libc::{STDIN_FILENO, STDOUT_FILENO, STDERR_FILENO};
