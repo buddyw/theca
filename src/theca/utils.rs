@@ -374,7 +374,7 @@ pub fn parse_last_touched(lt: &str) -> Result<OffsetDateTime> {
 
 pub fn localize_last_touched_string(lt: &str) -> Result<String> {
     let t = parse_last_touched(lt)?;
-    Ok(t.to_offset(UtcOffset::current_local_offset()).format(DATEFMT_SHORT))
+    Ok(t.to_offset(UtcOffset::local_offset_at(t)).format(DATEFMT_SHORT))
 }
 
 pub fn cmp_last_touched(a: &str, b: &str) -> Result<Ordering> {
