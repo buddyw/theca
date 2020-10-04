@@ -20,8 +20,7 @@ use std::iter::repeat;
 use std::time::UNIX_EPOCH;
 
 // time imports
-use time::get_time;
-use time::{strftime, strptime, at, Tm};
+use time::{OffsetDateTime, UtcOffset};
 
 // term imports
 use term::{self, stdout};
@@ -149,7 +148,7 @@ pub fn drop_to_editor(contents: &str) -> Result<String> {
     // setup temporary directory
     let tmpdir = TempDir::new("theca")?;
     // setup temporary file to write/read
-    let tmppath = tmpdir.path().join(&format!("{}", get_time().sec)[..]);
+    let tmppath = tmpdir.path().join(&format!("{}", OffsetDateTime::timestamp(OffsetDateTime::now_utc()))[..]);
     let mut tmpfile = File::create(&tmppath)?;
     // let mut tmpfile = File::open_mode(&tmppath, Open, ReadWrite)?;
     tmpfile.write_all(contents.as_bytes())?;
@@ -369,13 +368,13 @@ pub fn find_profile_folder(profile_folder: &str) -> Result<PathBuf> {
     }
 }
 
-pub fn parse_last_touched(lt: &str) -> Result<Tm> {
-    Ok(at(strptime(lt, DATEFMT)?.to_timespec()))
+pub fn parse_last_touched(lt: &str) -> Result<OffsetDateTime> {
+    Ok(OffsetDateTime::parse(lt, DATEFMT)?)
 }
 
 pub fn localize_last_touched_string(lt: &str) -> Result<String> {
     let t = parse_last_touched(lt)?;
-    Ok(strftime(DATEFMT_SHORT, &t)?)
+    Ok(t.to_offset(UtcOffset::current_local_offset()).format(DATEFMT_SHORT))
 }
 
 pub fn cmp_last_touched(a: &str, b: &str) -> Result<Ordering> {

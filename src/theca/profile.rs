@@ -6,7 +6,7 @@ use std::fs::{File, create_dir};
 use regex::Regex;
 use rustc_serialize::Encodable;
 use rustc_serialize::json::{decode, as_pretty_json, Encoder};
-use time::{now, strftime};
+use time::OffsetDateTime;
 
 // theca imports
 use utils::c::istty;
@@ -286,7 +286,8 @@ impl Profile {
             title: title,
             status: status.unwrap_or(Status::Blank),
             body: body,
-            last_touched: strftime(DATEFMT, &now())?,
+            //last_touched: strftime(DATEFMT, &now())?,
+            last_touched: OffsetDateTime::now_local().format(DATEFMT),
         });
         if print_msg {
             println!("note {} added", new_id + 1);
@@ -380,7 +381,7 @@ impl Profile {
         };
 
         // update last_touched
-        self.notes[item_pos].last_touched = strftime(DATEFMT, &now())?;
+        self.notes[item_pos].last_touched = OffsetDateTime::now_local().format(DATEFMT);
         println!("edited note {}", self.notes[item_pos].id);
         Ok(())
     }
@@ -401,7 +402,7 @@ impl Profile {
                             .iter()
                             .min_by_key(|n| match parse_last_touched(&*n.last_touched) {
                                 Ok(o) => o,
-                                Err(_) => now(),
+                                Err(_) => OffsetDateTime::now_local(),
                             }) {
             Some(n) => localize_last_touched_string(&*n.last_touched)?,
             None => return specific_fail_str!("last_touched is not properly formated"),
@@ -410,7 +411,7 @@ impl Profile {
                             .iter()
                             .max_by_key(|n| match parse_last_touched(&*n.last_touched) {
                                 Ok(o) => o,
-                                Err(_) => now(),
+                                Err(_) => OffsetDateTime::now_local(),
                             }) {
             Some(n) => localize_last_touched_string(&*n.last_touched)?,
             None => return specific_fail_str!("last_touched is not properly formated"),

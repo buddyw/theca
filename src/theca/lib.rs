@@ -24,6 +24,7 @@ extern crate crypto;
 extern crate term;
 extern crate rand;
 extern crate tempdir;
+extern crate serde;
 
 // std lib imports
 use std::env;
@@ -35,6 +36,7 @@ use errors::Result;
 
 pub use self::libc::{STDIN_FILENO, STDOUT_FILENO, STDERR_FILENO};
 pub use profile::Profile;
+pub use serde::Deserialize;
 
 #[macro_use]pub mod errors;
 pub mod profile;
@@ -49,7 +51,7 @@ pub fn version() -> String {
 }
 
 /// theca docopt argument struct
-#[derive(RustcDecodable, Clone)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct Args {
     pub cmd_add: bool,
     pub cmd_clear: bool,

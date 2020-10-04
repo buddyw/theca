@@ -95,9 +95,10 @@ Miscellaneous:
 
 fn theca_main() -> Result<()> {
     let mut args: Args = Docopt::new(USAGE)
-                                  .unwrap()
-                                  .version(Some(version()))
-                                  .decode()?;
+                                    .unwrap()
+                                    .version(Some(version()))
+                                    .deserialize()?;
+
     setup_args(&mut args)?;
 
     let (mut profile, profile_fingerprint) = Profile::new(&args.flag_profile,
