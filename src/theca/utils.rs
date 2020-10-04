@@ -14,7 +14,7 @@ use std::fs::{read_dir, File};
 use std::io::{Write, Read};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::env::{var, home_dir};
+use std::env::{var};
 use std::cmp::Ordering;
 use std::iter::repeat;
 use std::time::UNIX_EPOCH;
@@ -358,10 +358,11 @@ pub fn profile_fingerprint<P: AsRef<Path>>(path: P) -> Result<u64> {
 }
 
 pub fn find_profile_folder(profile_folder: &str) -> Result<PathBuf> {
+    extern crate dirs;
     if !profile_folder.is_empty() {
         Ok(PathBuf::from(profile_folder))
     } else {
-        match home_dir() {
+        match dirs::home_dir() {
             Some(ref p) => Ok(p.join(".theca")),
             None => specific_fail_str!("failed to find your home directory"),
         }
