@@ -152,7 +152,7 @@ pub fn drop_to_editor(contents: &str) -> Result<String> {
     // setup temporary file to write/read
     let tmppath = tmpdir
         .path()
-        .join(&format!("{}", OffsetDateTime::timestamp(OffsetDateTime::now_utc()))[..]);
+        .join(OffsetDateTime::unix_timestamp(OffsetDateTime::now_utc()).to_string());
     let mut tmpfile = File::create(&tmppath)?;
     // let mut tmpfile = File::open_mode(&tmppath, Open, ReadWrite)?;
     tmpfile.write_all(contents.as_bytes())?;
@@ -380,8 +380,14 @@ pub fn parse_last_touched(lt: &str) -> Result<OffsetDateTime> {
 
 pub fn localize_last_touched_string(lt: &str) -> Result<String> {
     let t = parse_last_touched(lt)?;
-    Ok(t.to_offset(UtcOffset::local_offset_at(t))
-        .format(DATEFMT_SHORT))
+    Ok(t.to_offset(
+        UtcOffset::try_local_offset_at(t)
+            // at least try the current offset
+            .or_else(|_| UtcOffset::try_current_local_offset())
+            // give up and assume UTC
+            .unwrap_or_else(|_| UtcOffset::hours(0)),
+    )
+    .format(DATEFMT_SHORT))
 }
 
 pub fn cmp_last_touched(a: &str, b: &str) -> Result<Ordering> {
