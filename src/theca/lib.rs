@@ -293,7 +293,7 @@ pub fn parse_cmds(profile: &mut Profile, args: &mut Args, profile_fingerprint: &
 mod tests {
     #![allow(non_snake_case)]
     use super::lineformat::LineFormat;
-    use item::{Item, Status};
+    use crate::item::{Item, Status};
 
     fn write_item_test_case(item: Item, search: bool) -> String {
         let mut bytes: Vec<u8> = vec![];
