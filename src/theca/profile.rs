@@ -9,16 +9,20 @@ use rustc_serialize::json::{decode, as_pretty_json, Encoder};
 use time::OffsetDateTime;
 
 // theca imports
-use utils::c::istty;
-use utils::{drop_to_editor, pretty_line, get_yn_input, sorted_print, localize_last_touched_string,
-            parse_last_touched, find_profile_folder, profile_fingerprint};
-use errors::{Result, Error};
-use crypt::{encrypt, decrypt, password_to_key};
-use item::{Status, Item};
+use crate::{
+    crypt::{decrypt, encrypt, password_to_key},
+    errors::{Error, Result},
+    item::{Item, Status},
+    utils::c::istty,
+    utils::{
+        drop_to_editor, find_profile_folder, get_yn_input, localize_last_touched_string,
+        parse_last_touched, pretty_line, profile_fingerprint, sorted_print,
+    },
+};
 
 pub use libc::{STDIN_FILENO, STDOUT_FILENO, STDERR_FILENO};
 
-use {parse_cmds, Args, BoolFlags};
+use crate::{parse_cmds, Args, BoolFlags};
 
 /// datetime formating string
 pub static DATEFMT: &'static str = "%F %T %z";

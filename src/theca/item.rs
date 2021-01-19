@@ -4,9 +4,11 @@ use std::io::{self, Write};
 
 use rustc_serialize::{self, Decodable, Encodable};
 
-use lineformat::LineFormat;
-use utils::{format_field, localize_last_touched_string};
-use errors::Result;
+use crate::{
+    errors::Result,
+    lineformat::LineFormat,
+    utils::{format_field, localize_last_touched_string},
+};
 
 /// Represents a note within a profile
 #[derive(RustcDecodable, RustcEncodable, Clone, Debug)]

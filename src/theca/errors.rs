@@ -60,7 +60,7 @@ impl StdError for Error {
 
 macro_rules! specific_fail {
     ($short:expr) => {{
-        use errors::ErrorKind;
+        use crate::errors::ErrorKind;
         Err(::std::convert::From::from(
             Error {
                 kind: ErrorKind::Generic,

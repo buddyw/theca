@@ -8,6 +8,7 @@ a simple, fully featured, command line note taking tool
 """
 homepage = "https://pwoolcoc.github.io/theca"
 repository = "https://github.com/pwoolcoc/theca"
+edition = "2018"
 
 [lib]
 name = "theca"
