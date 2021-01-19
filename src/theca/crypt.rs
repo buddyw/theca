@@ -10,15 +10,15 @@
 //   defintions of the AES encryption, decryption, and PBKDF2 key derivation
 //   functions required to read and write encrypted profiles.
 
-use std::iter::repeat;
-use crypto::{symmetriccipher, buffer, aes, blockmodes};
-use crypto::buffer::{ReadBuffer, WriteBuffer, BufferResult};
-use crypto::pbkdf2::pbkdf2;
-use crypto::hmac::Hmac;
-use crypto::sha2::Sha256;
+use crypto::buffer::{BufferResult, ReadBuffer, WriteBuffer};
 use crypto::digest::Digest;
 use crypto::fortuna::Fortuna;
-use rand::{SeedableRng, Rng};
+use crypto::hmac::Hmac;
+use crypto::pbkdf2::pbkdf2;
+use crypto::sha2::Sha256;
+use crypto::{aes, blockmodes, buffer, symmetriccipher};
+use rand::{Rng, SeedableRng};
+use std::iter::repeat;
 
 // ALL the encryption functions thx rust-crypto ^_^
 pub fn encrypt(data: &[u8], key: &[u8]) -> Result<Vec<u8>, symmetriccipher::SymmetricCipherError> {
@@ -48,9 +48,10 @@ pub fn encrypt(data: &[u8], key: &[u8]) -> Result<Vec<u8>, symmetriccipher::Symm
     Ok(final_result)
 }
 
-pub fn decrypt(encrypted_data: &[u8],
-               key: &[u8])
-               -> Result<Vec<u8>, symmetriccipher::SymmetricCipherError> {
+pub fn decrypt(
+    encrypted_data: &[u8],
+    key: &[u8],
+) -> Result<Vec<u8>, symmetriccipher::SymmetricCipherError> {
     let iv = &encrypted_data[0..16];
 
     let mut decryptor =

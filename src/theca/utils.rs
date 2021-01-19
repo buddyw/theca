@@ -10,21 +10,21 @@
 //   various utility functions for doings things we need to do.
 
 // std imports
+use std::cmp::Ordering;
+use std::env::var;
 use std::fs::{read_dir, File};
-use std::io::{Write, Read};
+use std::io::{Read, Write};
+use std::iter::repeat;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::env::{var};
-use std::cmp::Ordering;
-use std::iter::repeat;
 use std::time::UNIX_EPOCH;
 
 // time imports
 use time::{OffsetDateTime, UtcOffset};
 
 // term imports
-use term::{self, stdout};
 use term::Attr::Bold;
+use term::{self, stdout};
 
 // json imports
 use rustc_serialize::json::{as_pretty_json, decode};
@@ -44,14 +44,14 @@ use crate::{
     BoolFlags,
 };
 
-pub use libc::{STDIN_FILENO, STDOUT_FILENO, STDERR_FILENO};
+pub use libc::{STDERR_FILENO, STDIN_FILENO, STDOUT_FILENO};
 
 // c calls for TIOCGWINSZ
 pub mod c {
     extern crate libc;
-    pub use self::libc::{c_int, c_uint, c_ushort, c_ulong, c_uchar, STDOUT_FILENO, isatty};
-    use std::mem::zeroed;
+    pub use self::libc::{c_int, c_uchar, c_uint, c_ulong, c_ushort, isatty, STDOUT_FILENO};
     use std::default::Default;
+    use std::mem::zeroed;
 
     #[derive(Clone, Copy)]
     pub struct Winsize {
@@ -118,9 +118,9 @@ fn set_term_echo(echo: bool) -> Result<()> {
     let mut t = c::Termios::new();
     try_errno!(c::tcgetattr(STDIN_FILENO, &mut t));
     if echo {
-        t.c_lflag |= c::ECHO;  // on
+        t.c_lflag |= c::ECHO; // on
     } else {
-        t.c_lflag &= !c::ECHO;  // off
+        t.c_lflag &= !c::ECHO; // off
     };
     try_errno!(c::tcsetattr(STDIN_FILENO, c::TCSANOW, &t));
     Ok(())
@@ -150,18 +150,18 @@ pub fn drop_to_editor(contents: &str) -> Result<String> {
     // setup temporary directory
     let tmpdir = TempDir::new("theca")?;
     // setup temporary file to write/read
-    let tmppath = tmpdir.path().join(&format!("{}", OffsetDateTime::timestamp(OffsetDateTime::now_utc()))[..]);
+    let tmppath = tmpdir
+        .path()
+        .join(&format!("{}", OffsetDateTime::timestamp(OffsetDateTime::now_utc()))[..]);
     let mut tmpfile = File::create(&tmppath)?;
     // let mut tmpfile = File::open_mode(&tmppath, Open, ReadWrite)?;
     tmpfile.write_all(contents.as_bytes())?;
     let editor = match var("VISUAL") {
         Ok(v) => v,
-        Err(_) => {
-            match var("EDITOR") {
-                Ok(v) => v,
-                Err(_) => return specific_fail_str!("neither $VISUAL nor $EDITOR is set."),
-            }
-        }
+        Err(_) => match var("EDITOR") {
+            Ok(v) => v,
+            Err(_) => return specific_fail_str!("neither $VISUAL nor $EDITOR is set."),
+        },
     };
     // lets start `editor` and edit the file at `tmppath`
     // first we need to set STDIN, STDOUT, and STDERR to those that theca is
@@ -208,9 +208,10 @@ pub fn get_yn_input(message: &str) -> Result<bool> {
     get_yn_input_with_output(stdout, message)
 }
 
-pub fn get_yn_input_with_output<W: Write>(mut terminal: Box<dyn term::Terminal<Output = W>>,
-                                          message: &str)
-                                          -> Result<bool> {
+pub fn get_yn_input_with_output<W: Write>(
+    mut terminal: Box<dyn term::Terminal<Output = W>>,
+    message: &str,
+) -> Result<bool> {
     write!(terminal, "{}", message)?;
     terminal.flush()?;
     let stdin = stdin();
@@ -272,12 +273,8 @@ fn print_header(line_format: &LineFormat) -> Result<()> {
         Some(t) => t,
         None => return specific_fail_str!("could not retrieve standard output."),
     };
-    let column_seperator: String = repeat(' ')
-                                       .take(line_format.colsep)
-                                       .collect();
-    let header_seperator: String = repeat('-')
-                                       .take(line_format.line_width())
-                                       .collect();
+    let column_seperator: String = repeat(' ').take(line_format.colsep).collect();
+    let header_seperator: String = repeat('-').take(line_format.line_width()).collect();
     let tty = c::istty(STDOUT_FILENO);
     let status = if line_format.status_width == 0 {
         "".to_string()
@@ -287,27 +284,32 @@ fn print_header(line_format: &LineFormat) -> Result<()> {
     if tty {
         t.attr(Bold)?;
     }
-    write!(t,
-                "{1}{0}{2}{0}{3}{4}\n{5}\n",
-                column_seperator,
-                format_field(&"id".to_string(), line_format.id_width, false),
-                format_field(&"title".to_string(), line_format.title_width, false),
-                status,
-                format_field(&"last touched".to_string(),
-                             line_format.touched_width,
-                             false),
-                header_seperator)?;
+    write!(
+        t,
+        "{1}{0}{2}{0}{3}{4}\n{5}\n",
+        column_seperator,
+        format_field(&"id".to_string(), line_format.id_width, false),
+        format_field(&"title".to_string(), line_format.title_width, false),
+        status,
+        format_field(
+            &"last touched".to_string(),
+            line_format.touched_width,
+            false
+        ),
+        header_seperator
+    )?;
     if tty {
         t.reset()?;
     }
     Ok(())
 }
 
-pub fn sorted_print(notes: &mut Vec<Item>,
-                    limit: usize,
-                    flags: BoolFlags,
-                    status: Option<Status>)
-                    -> Result<()> {
+pub fn sorted_print(
+    notes: &mut Vec<Item>,
+    limit: usize,
+    flags: BoolFlags,
+    status: Option<Status>,
+) -> Result<()> {
     let condensed = flags.condensed;
     let json = flags.json;
     let datesort = flags.datesort;
@@ -325,10 +327,12 @@ pub fn sorted_print(notes: &mut Vec<Item>,
         notes.len()
     };
     if datesort {
-        notes.sort_by(|a, b| match cmp_last_touched(&*a.last_touched, &*b.last_touched) {
-            Ok(o) => o,
-            Err(_) => a.last_touched.cmp(&b.last_touched),
-        });
+        notes.sort_by(
+            |a, b| match cmp_last_touched(&*a.last_touched, &*b.last_touched) {
+                Ok(o) => o,
+                Err(_) => a.last_touched.cmp(&b.last_touched),
+            },
+        );
     }
 
     if reverse {
@@ -376,7 +380,8 @@ pub fn parse_last_touched(lt: &str) -> Result<OffsetDateTime> {
 
 pub fn localize_last_touched_string(lt: &str) -> Result<String> {
     let t = parse_last_touched(lt)?;
-    Ok(t.to_offset(UtcOffset::local_offset_at(t)).format(DATEFMT_SHORT))
+    Ok(t.to_offset(UtcOffset::local_offset_at(t))
+        .format(DATEFMT_SHORT))
 }
 
 pub fn cmp_last_touched(a: &str, b: &str) -> Result<Ordering> {

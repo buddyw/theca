@@ -10,17 +10,17 @@
 //   definitions for Error, a catch-all for converting various
 //   lib errors.
 
-use std::fmt;
+use crypto::symmetriccipher::SymmetricCipherError;
+use docopt;
+use rustc_serialize::json::EncoderError;
 use std::convert::From;
 use std::error::Error as StdError;
+use std::fmt;
 use std::io::Error as IoError;
 use std::string::FromUtf8Error;
 use std::time::SystemTimeError;
-use time::ParseError;
-use crypto::symmetriccipher::SymmetricCipherError;
-use rustc_serialize::json::EncoderError;
-use docopt;
 use term;
+use time::ParseError;
 
 pub type Result<T> = ::std::result::Result<T, Error>;
 
@@ -61,34 +61,26 @@ impl StdError for Error {
 macro_rules! specific_fail {
     ($short:expr) => {{
         use crate::errors::ErrorKind;
-        Err(::std::convert::From::from(
-            Error {
-                kind: ErrorKind::Generic,
-                desc: $short,
-                detail: None
-            }
-        ))
-    }}
+        Err(::std::convert::From::from(Error {
+            kind: ErrorKind::Generic,
+            desc: $short,
+            detail: None,
+        }))
+    }};
 }
 
 macro_rules! specific_fail_str {
     ($s:expr) => {
         specific_fail!($s.to_string())
-    }
+    };
 }
 
 macro_rules! try_errno {
-    ($e:expr) => {
-        {
-            if $e != 0 {
-                return Err(
-                    ::std::convert::From::from(
-                        IoError::last_os_error()
-                    )
-                );
-            }
+    ($e:expr) => {{
+        if $e != 0 {
+            return Err(::std::convert::From::from(IoError::last_os_error()));
         }
-    }
+    }};
 }
 
 impl From<EncoderError> for Error {

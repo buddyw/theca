@@ -14,36 +14,36 @@
 
 //! Definitions of Item and Profile and their implementations
 
-extern crate core;
-extern crate libc;
-extern crate time;
-extern crate docopt;
-extern crate rustc_serialize;
-extern crate regex;
 extern crate crypto;
-extern crate term;
+extern crate docopt;
+extern crate libc;
 extern crate rand;
-extern crate tempdir;
+extern crate regex;
+extern crate rustc_serialize;
 extern crate serde;
+extern crate tempdir;
+extern crate term;
+extern crate time;
 
 // std lib imports
-use std::env;
 use std::default::Default;
+use std::env;
 
 // theca imports
-use utils::{find_profile_folder, get_password, profiles_in_folder, extract_status};
 use errors::Result;
+use utils::{extract_status, find_profile_folder, get_password, profiles_in_folder};
 
-pub use self::libc::{STDIN_FILENO, STDOUT_FILENO, STDERR_FILENO};
+pub use self::libc::{STDERR_FILENO, STDIN_FILENO, STDOUT_FILENO};
 pub use profile::Profile;
 pub use serde::Deserialize;
 
-#[macro_use]pub mod errors;
-pub mod profile;
+#[macro_use]
+pub mod errors;
+pub mod crypt;
 pub mod item;
 pub mod lineformat;
+pub mod profile;
 pub mod utils;
-pub mod crypt;
 
 /// Current version of theca
 pub fn version() -> String {
@@ -163,7 +163,6 @@ pub fn setup_args(args: &mut Args) -> Result<()> {
         args.flag_profile = "default".to_string();
     }
 
-
     Ok(())
 }
 
@@ -171,34 +170,41 @@ pub fn parse_cmds(profile: &mut Profile, args: &mut Args, profile_fingerprint: &
     let status = extract_status(args.flag_none, args.flag_started, args.flag_urgent)?;
     let flags = BoolFlags::from_args(args);
 
-    if [args.cmd_add,
+    if [
+        args.cmd_add,
         args.cmd_edit,
         args.cmd_encrypt_profile,
         args.cmd_del,
         args.cmd_decrypt_profile,
         args.cmd_transfer,
         args.cmd_clear,
-        args.cmd_new_profile]
-           .iter()
-           .any(|c| c == &true) {
+        args.cmd_new_profile,
+    ]
+    .iter()
+    .any(|c| c == &true)
+    {
         // add
         if args.cmd_add {
-            profile.add_note(&args.arg_title,
-                                  &args.flag_body,
-                                  status,
-                                  args.cmd__,
-                                  args.flag_editor,
-                                  true)?;
+            profile.add_note(
+                &args.arg_title,
+                &args.flag_body,
+                status,
+                args.cmd__,
+                args.flag_editor,
+                true,
+            )?;
         }
 
         // edit
         if args.cmd_edit {
-            profile.edit_note(args.arg_id[0],
-                                   &args.arg_title,
-                                   &args.flag_body,
-                                   status,
-                                   args.cmd__,
-                                   flags)?;
+            profile.edit_note(
+                args.arg_id[0],
+                &args.arg_title,
+                &args.flag_body,
+                status,
+                args.cmd__,
+                flags,
+            )?;
         }
 
         // delete
@@ -267,13 +273,13 @@ pub fn parse_cmds(profile: &mut Profile, args: &mut Args, profile_fingerprint: &
         from_args.arg_name[0] = args.flag_profile.clone();
 
         let (mut from_profile, from_fingerprint) = Profile::new(
-                &from_args.flag_profile,
-                &from_args.flag_profile_folder,
-                &from_args.flag_key,
-                from_args.cmd_new_profile,
-                from_args.flag_encrypted,
-                from_args.flag_yes
-            )?;
+            &from_args.flag_profile,
+            &from_args.flag_profile_folder,
+            &from_args.flag_key,
+            from_args.cmd_new_profile,
+            from_args.flag_encrypted,
+            from_args.flag_yes,
+        )?;
 
         parse_cmds(&mut from_profile, &mut from_args, &from_fingerprint)?;
     } else if args.cmd_list_profiles {
@@ -288,14 +294,15 @@ pub fn parse_cmds(profile: &mut Profile, args: &mut Args, profile_fingerprint: &
 
 #[cfg(test)]
 mod tests {
-#![allow(non_snake_case)]
-    use item::{Status, Item};
+    #![allow(non_snake_case)]
     use super::lineformat::LineFormat;
+    use item::{Item, Status};
 
     fn write_item_test_case(item: Item, search: bool) -> String {
         let mut bytes: Vec<u8> = vec![];
         let line_format = LineFormat::new(&[item.clone()], false, false).unwrap();
-        item.write(&mut bytes, &line_format, search).expect("item.write failed");
+        item.write(&mut bytes, &line_format, search)
+            .expect("item.write failed");
         String::from_utf8_lossy(&bytes).into_owned()
     }
 
@@ -309,8 +316,10 @@ mod tests {
             body: "This is the body".into(),
             last_touched: "2016-01-08 15:31:14 -0800".into(),
         };
-        assert_eq!(write_item_test_case(item, false),
-                   "0   This is a title (+)  2016-01-08 18:31:14\n");
+        assert_eq!(
+            write_item_test_case(item, false),
+            "0   This is a title (+)  2016-01-08 18:31:14\n"
+        );
     }
 
     #[test]
@@ -324,8 +333,10 @@ mod tests {
             body: "".into(),
             last_touched: "2016-07-08 15:31:14 -0800".into(),
         };
-        assert_eq!(write_item_test_case(item, false),
-                   "0   This is a title  2016-07-08 19:31:14\n");
+        assert_eq!(
+            write_item_test_case(item, false),
+            "0   This is a title  2016-07-08 19:31:14\n"
+        );
     }
 
     #[test]
@@ -337,9 +348,11 @@ mod tests {
             body: "This is the body\nit has multiple lines".into(),
             last_touched: "2016-07-08 15:31:14 -0800".into(),
         };
-        assert_eq!(write_item_test_case(item, true),
-                   "0   This is a title      2016-07-08 19:31:14\n\tThis is the body\n\tit has \
-                    multiple lines\n");
+        assert_eq!(
+            write_item_test_case(item, true),
+            "0   This is a title      2016-07-08 19:31:14\n\tThis is the body\n\tit has \
+                    multiple lines\n"
+        );
     }
 
     #[test]
@@ -352,8 +365,10 @@ mod tests {
             body: "".into(),
             last_touched: "2016-07-08 15:31:14 -0800".into(),
         };
-        assert_eq!(write_item_test_case(item, true),
-                   "0   This is a title  2016-07-08 19:31:14\n");
+        assert_eq!(
+            write_item_test_case(item, true),
+            "0   This is a title  2016-07-08 19:31:14\n"
+        );
     }
 
     #[test]
@@ -365,8 +380,9 @@ mod tests {
             body: "This is the body".into(),
             last_touched: "2016-07-08 15:31:14 -0800".into(),
         };
-        assert_eq!(write_item_test_case(item, false),
-                   "0   This is a title (+)  Started  2016-07-08 19:31:14\n");
-
+        assert_eq!(
+            write_item_test_case(item, false),
+            "0   This is a title (+)  Started  2016-07-08 19:31:14\n"
+        );
     }
 }

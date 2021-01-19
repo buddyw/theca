@@ -1,11 +1,11 @@
 // std lib imports
+use std::fs::{create_dir, File};
 use std::io::{stdin, Read, Write};
-use std::fs::{File, create_dir};
 
 // random things
 use regex::Regex;
+use rustc_serialize::json::{as_pretty_json, decode, Encoder};
 use rustc_serialize::Encodable;
-use rustc_serialize::json::{decode, as_pretty_json, Encoder};
 use time::OffsetDateTime;
 
 // theca imports
@@ -20,7 +20,7 @@ use crate::{
     },
 };
 
-pub use libc::{STDIN_FILENO, STDOUT_FILENO, STDERR_FILENO};
+pub use libc::{STDERR_FILENO, STDIN_FILENO, STDOUT_FILENO};
 
 use crate::{parse_cmds, Args, BoolFlags};
 
@@ -42,26 +42,31 @@ impl Profile {
         // if the folder doesn't exist, make it yo!
         if !profile_path.exists() {
             if !yes {
-                let message = format!("{} doesn't exist, would you like to create it?\n",
-                                      profile_path.display());
+                let message = format!(
+                    "{} doesn't exist, would you like to create it?\n",
+                    profile_path.display()
+                );
                 if !get_yn_input(&message)? {
                     return specific_fail_str!("ok bye ♥");
                 }
             }
             create_dir(&profile_path)?;
         }
-        Ok((Profile {
-            encrypted: encrypted,
-            notes: vec![],
-        },
-            0u64))
+        Ok((
+            Profile {
+                encrypted: encrypted,
+                notes: vec![],
+            },
+            0u64,
+        ))
     }
 
-    fn from_existing_profile(profile_name: &str,
-                             profile_folder: &str,
-                             key: &str,
-                             encrypted: bool)
-                             -> Result<(Profile, u64)> {
+    fn from_existing_profile(
+        profile_name: &str,
+        profile_folder: &str,
+        key: &str,
+        encrypted: bool,
+    ) -> Result<(Profile, u64)> {
         // set profile folder
         let mut profile_path = find_profile_folder(profile_folder)?;
 
@@ -95,13 +100,14 @@ impl Profile {
     }
 
     /// setup a Profile struct based on the command line arguments
-    pub fn new(profile_name: &str,
-               profile_folder: &str,
-               key: &str,
-               new_profile: bool,
-               encrypted: bool,
-               yes: bool)
-               -> Result<(Profile, u64)> {
+    pub fn new(
+        profile_name: &str,
+        profile_folder: &str,
+        key: &str,
+        new_profile: bool,
+        encrypted: bool,
+        yes: bool,
+    ) -> Result<(Profile, u64)> {
         if new_profile {
             Profile::from_scratch(profile_folder, encrypted, yes)
         } else {
@@ -135,8 +141,10 @@ impl Profile {
         }
 
         if args.cmd_new_profile && profile_path.exists() && !args.flag_yes {
-            let message = format!("profile {} already exists would you like to overwrite it?\n",
-                                  profile_path.display());
+            let message = format!(
+                "profile {} already exists would you like to overwrite it?\n",
+                profile_path.display()
+            );
             if !get_yn_input(&message)? {
                 return specific_fail_str!("ok bye ♥");
             }
@@ -145,9 +153,11 @@ impl Profile {
         if fingerprint > &0u64 {
             let new_fingerprint = profile_fingerprint(&profile_path)?;
             if &new_fingerprint != fingerprint && !args.flag_yes {
-                let message = format!("changes have been made to the profile '{}' on disk since \
+                let message = format!(
+                    "changes have been made to the profile '{}' on disk since \
                                        it was loaded, would you like to attempt to merge them?\n",
-                                      args.flag_profile);
+                    args.flag_profile
+                );
                 if !get_yn_input(&message)? {
                     return specific_fail_str!("ok bye ♥");
                 }
@@ -165,8 +175,8 @@ impl Profile {
                     &new_args.flag_key,
                     new_args.cmd_new_profile,
                     new_args.flag_encrypted,
-                    new_args.flag_yes
-                    )?;
+                    new_args.flag_yes,
+                )?;
                 parse_cmds(&mut changed_profile, &mut new_args, &changed_fingerprint)?;
                 changed_profile.save_to_file(&new_args, &0u64)?;
                 return Ok(());
@@ -201,68 +211,81 @@ impl Profile {
     /// transfer a note from the profile to another profile
     pub fn transfer_note(&mut self, args: &Args) -> Result<()> {
         if args.flag_profile == args.arg_name[0] {
-            return specific_fail!(format!("cannot transfer a note from a profile to itself ({} \
+            return specific_fail!(format!(
+                "cannot transfer a note from a profile to itself ({} \
                                            -> {})",
-                                          args.flag_profile,
-                                          args.arg_name[0]));
+                args.flag_profile, args.arg_name[0]
+            ));
         }
 
         let mut trans_args = args.clone();
         trans_args.flag_profile = args.arg_name[0].clone();
-        let (mut trans_profile, trans_fingerprint) = Profile::new(&args.arg_name[0],
-                                                                       &args.flag_profile_folder,
-                                                                       &args.flag_key,
-                                                                       args.cmd_new_profile,
-                                                                       args.flag_encrypted,
-                                                                       args.flag_yes)?;
+        let (mut trans_profile, trans_fingerprint) = Profile::new(
+            &args.arg_name[0],
+            &args.flag_profile_folder,
+            &args.flag_key,
+            args.cmd_new_profile,
+            args.flag_encrypted,
+            args.flag_yes,
+        )?;
 
-        if self.notes
-               .iter()
-               .find(|n| n.id == args.arg_id[0])
-               .map(|n| {
-                   trans_profile.add_note(&n.title,
-                                          &[n.body.clone()],
-                                          Some(n.status),
-                                          false,
-                                          false,
-                                          false)
-               })
-               .is_some() {
-            if self.notes
-                   .iter()
-                   .position(|n| n.id == args.arg_id[0])
-                   .map(|e| self.notes.remove(e))
-                   .is_some() {
+        if self
+            .notes
+            .iter()
+            .find(|n| n.id == args.arg_id[0])
+            .map(|n| {
+                trans_profile.add_note(
+                    &n.title,
+                    &[n.body.clone()],
+                    Some(n.status),
+                    false,
+                    false,
+                    false,
+                )
+            })
+            .is_some()
+        {
+            if self
+                .notes
+                .iter()
+                .position(|n| n.id == args.arg_id[0])
+                .map(|e| self.notes.remove(e))
+                .is_some()
+            {
                 trans_profile.save_to_file(&trans_args, &trans_fingerprint)?
             } else {
-                return specific_fail!(format!("couldn't remove note {} in {}, aborting nothing \
+                return specific_fail!(format!(
+                    "couldn't remove note {} in {}, aborting nothing \
                                                will be saved",
-                                              args.arg_id[0],
-                                              args.flag_profile));
+                    args.arg_id[0], args.flag_profile
+                ));
             }
         } else {
-            return specific_fail!(format!("could not transfer note {} from {} -> {}",
-                                          args.arg_id[0],
-                                          args.flag_profile,
-                                          args.arg_name[0]));
+            return specific_fail!(format!(
+                "could not transfer note {} from {} -> {}",
+                args.arg_id[0], args.flag_profile, args.arg_name[0]
+            ));
         }
-        println!("transfered [{}: note {} -> {}: note {}]",
-                 args.flag_profile,
-                 args.arg_id[0],
-                 args.arg_name[0],
-                 trans_profile.notes.last().map_or(0, |n| n.id));
+        println!(
+            "transfered [{}: note {} -> {}: note {}]",
+            args.flag_profile,
+            args.arg_id[0],
+            args.arg_name[0],
+            trans_profile.notes.last().map_or(0, |n| n.id)
+        );
         Ok(())
     }
 
     /// add a item to the profile
-    pub fn add_note(&mut self,
-                    title: &str,
-                    body: &[String],
-                    status: Option<Status>,
-                    use_stdin: bool,
-                    use_editor: bool,
-                    print_msg: bool)
-                    -> Result<()> {
+    pub fn add_note(
+        &mut self,
+        title: &str,
+        body: &[String],
+        status: Option<Status>,
+        use_stdin: bool,
+        use_editor: bool,
+        print_msg: bool,
+    ) -> Result<()> {
         let title = title.replace("\n", "").to_string();
 
         let body = if use_stdin {
@@ -302,11 +325,12 @@ impl Profile {
     /// delete an item from the profile
     pub fn delete_note(&mut self, id: &[usize]) {
         for nid in id.iter() {
-            let remove = self.notes
-                             .iter()
-                             .position(|n| &n.id == nid)
-                             .map(|e| self.notes.remove(e))
-                             .is_some();
+            let remove = self
+                .notes
+                .iter()
+                .position(|n| &n.id == nid)
+                .map(|e| self.notes.remove(e))
+                .is_some();
             if remove {
                 println!("deleted note {}", nid);
             } else {
@@ -316,14 +340,15 @@ impl Profile {
     }
 
     /// edit an item in the profile
-    pub fn edit_note(&mut self,
-                     id: usize,
-                     title: &str,
-                     body: &[String],
-                     status: Option<Status>,
-                     use_stdin: bool,
-                     flags: BoolFlags)
-                     -> Result<()> {
+    pub fn edit_note(
+        &mut self,
+        id: usize,
+        title: &str,
+        body: &[String],
+        status: Option<Status>,
+        use_stdin: bool,
+        flags: BoolFlags,
+    ) -> Result<()> {
         // let id = args.arg_id[0];
         let item_pos: usize = match self.notes.iter().position(|n| n.id == id) {
             Some(i) => i,
@@ -339,12 +364,10 @@ impl Profile {
                     stdin().read_to_string(&mut buf)?;
                     self.notes[item_pos].body = buf.to_owned();
                 } else {
-                    self.notes[item_pos].title = title.replace("\n", "")
-                                                      .to_string()
+                    self.notes[item_pos].title = title.replace("\n", "").to_string()
                 }
             } else {
-                self.notes[item_pos].title = title.replace("\n", "")
-                                                  .to_string()
+                self.notes[item_pos].title = title.replace("\n", "").to_string()
             }
             // change title
         }
@@ -359,13 +382,15 @@ impl Profile {
             } else if use_editor {
                 if istty(STDOUT_FILENO) && istty(STDIN_FILENO) {
                     if encrypted && !yes {
-                        let message = format!("{0}\n\n{1}\n{2}\n\n{0}\n{3}\n",
-                                              "## [WARNING] ##",
-                                              "continuing will write the body of the decrypted \
+                        let message = format!(
+                            "{0}\n\n{1}\n{2}\n\n{0}\n{3}\n",
+                            "## [WARNING] ##",
+                            "continuing will write the body of the decrypted \
                                                note to a temporary",
-                                              "file, increasing the possibilty it could be \
+                            "file, increasing the possibilty it could be \
                                                recovered later.",
-                                              "Are you sure you want to continue?\n");
+                            "Are you sure you want to continue?\n"
+                        );
                         if !get_yn_input(&message)? {
                             return specific_fail_str!("ok bye ♥");
                         }
@@ -392,46 +417,60 @@ impl Profile {
 
     /// print information about the profile
     pub fn stats(&mut self, name: &str) -> Result<()> {
-        let no_s = self.notes.iter().filter(|n| n.status == Status::Blank).count();
-        let started_s = self.notes
-                            .iter()
-                            .filter(|n| n.status == Status::Started)
-                            .count();
-        let urgent_s = self.notes
-                           .iter()
-                           .filter(|n| n.status == Status::Urgent)
-                           .count();
+        let no_s = self
+            .notes
+            .iter()
+            .filter(|n| n.status == Status::Blank)
+            .count();
+        let started_s = self
+            .notes
+            .iter()
+            .filter(|n| n.status == Status::Started)
+            .count();
+        let urgent_s = self
+            .notes
+            .iter()
+            .filter(|n| n.status == Status::Urgent)
+            .count();
         let tty = istty(STDOUT_FILENO);
-        let min = match self.notes
-                            .iter()
-                            .min_by_key(|n| match parse_last_touched(&*n.last_touched) {
-                                Ok(o) => o,
-                                Err(_) => OffsetDateTime::now_local(),
-                            }) {
-            Some(n) => localize_last_touched_string(&*n.last_touched)?,
-            None => return specific_fail_str!("last_touched is not properly formated"),
-        };
-        let max = match self.notes
-                            .iter()
-                            .max_by_key(|n| match parse_last_touched(&*n.last_touched) {
-                                Ok(o) => o,
-                                Err(_) => OffsetDateTime::now_local(),
-                            }) {
-            Some(n) => localize_last_touched_string(&*n.last_touched)?,
-            None => return specific_fail_str!("last_touched is not properly formated"),
-        };
+        let min =
+            match self
+                .notes
+                .iter()
+                .min_by_key(|n| match parse_last_touched(&*n.last_touched) {
+                    Ok(o) => o,
+                    Err(_) => OffsetDateTime::now_local(),
+                }) {
+                Some(n) => localize_last_touched_string(&*n.last_touched)?,
+                None => return specific_fail_str!("last_touched is not properly formated"),
+            };
+        let max =
+            match self
+                .notes
+                .iter()
+                .max_by_key(|n| match parse_last_touched(&*n.last_touched) {
+                    Ok(o) => o,
+                    Err(_) => OffsetDateTime::now_local(),
+                }) {
+                Some(n) => localize_last_touched_string(&*n.last_touched)?,
+                None => return specific_fail_str!("last_touched is not properly formated"),
+            };
         pretty_line("name: ", &format!("{}\n", name), tty)?;
         pretty_line("encrypted: ", &format!("{}\n", self.encrypted), tty)?;
         pretty_line("notes: ", &format!("{}\n", self.notes.len()), tty)?;
-        pretty_line("statuses: ",
-                         &format!("none: {}, started: {}, urgent: {}\n",
-                                  no_s,
-                                  started_s,
-                                  urgent_s),
-                         tty)?;
-        pretty_line("note ages: ",
-                         &format!("oldest: {}, newest: {}\n", min, max),
-                         tty)?;
+        pretty_line(
+            "statuses: ",
+            &format!(
+                "none: {}, started: {}, urgent: {}\n",
+                no_s, started_s, urgent_s
+            ),
+            tty,
+        )?;
+        pretty_line(
+            "note ages: ",
+            &format!("oldest: {}, newest: {}\n", min, max),
+            tty,
+        )?;
         Ok(())
     }
 
@@ -451,34 +490,42 @@ impl Profile {
                 pretty_line("id: ", &format!("{}\n", self.notes[note_pos].id), tty)?;
                 pretty_line("title: ", &format!("{}\n", self.notes[note_pos].title), tty)?;
                 if self.notes[note_pos].status != Status::Blank {
-                pretty_line("status: ",
-                                 &format!("{}\n", self.notes[note_pos].status),
-                                 tty)?;
+                    pretty_line(
+                        "status: ",
+                        &format!("{}\n", self.notes[note_pos].status),
+                        tty,
+                    )?;
                 }
-                pretty_line("last touched: ",
-                             &format!("{}\n",
-                            localize_last_touched_string(
-                                &*self.notes[note_pos].last_touched
-                            )
-                        ?),
-                             tty)?;
+                pretty_line(
+                    "last touched: ",
+                    &format!(
+                        "{}\n",
+                        localize_last_touched_string(&*self.notes[note_pos].last_touched)?
+                    ),
+                    tty,
+                )?;
             } else {
                 pretty_line("id\n--\n", &format!("{}\n\n", self.notes[note_pos].id), tty)?;
-                pretty_line("title\n-----\n",
-                                 &format!("{}\n\n", self.notes[note_pos].title),
-                                 tty)?;
+                pretty_line(
+                    "title\n-----\n",
+                    &format!("{}\n\n", self.notes[note_pos].title),
+                    tty,
+                )?;
                 if self.notes[note_pos].status != Status::Blank {
-                    pretty_line("status\n------\n",
-                                     &format!("{:?}\n\n", self.notes[note_pos].status),
-                                     tty)?;
+                    pretty_line(
+                        "status\n------\n",
+                        &format!("{:?}\n\n", self.notes[note_pos].status),
+                        tty,
+                    )?;
                 }
-                pretty_line("last touched\n------------\n",
-                                 &format!("{}\n\n",
-                                localize_last_touched_string(
-                                    &*self.notes[note_pos].last_touched
-                                )
-                            ?),
-                                 tty)?;
+                pretty_line(
+                    "last touched\n------------\n",
+                    &format!(
+                        "{}\n\n",
+                        localize_last_touched_string(&*self.notes[note_pos].last_touched)?
+                    ),
+                    tty,
+                )?;
             };
 
             // body
@@ -486,9 +533,11 @@ impl Profile {
                 if condensed {
                     pretty_line("body: ", &format!("{}\n", self.notes[note_pos].body), tty)?;
                 } else {
-                    pretty_line("body\n----\n",
-                                     &format!("{}\n\n", self.notes[note_pos].body),
-                                     tty)?;
+                    pretty_line(
+                        "body\n----\n",
+                        &format!("{}\n\n", self.notes[note_pos].body),
+                        tty,
+                    )?;
                 };
             }
         }
@@ -496,11 +545,12 @@ impl Profile {
     }
 
     /// print all notes in the profile
-    pub fn list_notes(&mut self,
-                      limit: usize,
-                      flags: BoolFlags,
-                      status: Option<Status>)
-                      -> Result<()> {
+    pub fn list_notes(
+        &mut self,
+        limit: usize,
+        flags: BoolFlags,
+        status: Option<Status>,
+    ) -> Result<()> {
         if !self.notes.is_empty() {
             sorted_print(&mut self.notes.clone(), limit, flags, status)?;
         } else if flags.json {
@@ -512,12 +562,13 @@ impl Profile {
     }
 
     /// print notes search for in the profile
-    pub fn search_notes(&mut self,
-                        pattern: &str,
-                        limit: usize,
-                        flags: BoolFlags,
-                        status: Option<Status>)
-                        -> Result<()> {
+    pub fn search_notes(
+        &mut self,
+        pattern: &str,
+        limit: usize,
+        flags: BoolFlags,
+        status: Option<Status>,
+    ) -> Result<()> {
         let notes: Vec<Item> = if flags.regex {
             let re = match Regex::new(&pattern[..]) {
                 Ok(r) => r,
@@ -525,20 +576,24 @@ impl Profile {
             };
             self.notes
                 .iter()
-                .filter(|n| if flags.search_body {
-                    re.is_match(&*n.body)
-                } else {
-                    re.is_match(&*n.title)
+                .filter(|n| {
+                    if flags.search_body {
+                        re.is_match(&*n.body)
+                    } else {
+                        re.is_match(&*n.title)
+                    }
                 })
                 .cloned()
                 .collect()
         } else {
             self.notes
                 .iter()
-                .filter(|n| if flags.search_body {
-                    n.body.contains(&pattern[..])
-                } else {
-                    n.title.contains(&pattern[..])
+                .filter(|n| {
+                    if flags.search_body {
+                        n.body.contains(&pattern[..])
+                    } else {
+                        n.title.contains(&pattern[..])
+                    }
                 })
                 .cloned()
                 .collect()

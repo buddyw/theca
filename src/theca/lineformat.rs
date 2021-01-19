@@ -32,11 +32,7 @@ impl LineFormat {
         let console_width = termsize();
 
         // set colsep
-        let colsep = if condensed {
-            1
-        } else {
-            2
-        };
+        let colsep = if condensed { 1 } else { 2 };
 
         let mut line_format = LineFormat {
             colsep: colsep,
@@ -47,8 +43,7 @@ impl LineFormat {
         };
 
         // get length of longest id string
-        line_format.id_width = match items.iter()
-                                          .max_by_key(|n| n.id.to_string().len()) {
+        line_format.id_width = match items.iter().max_by_key(|n| n.id.to_string().len()) {
             Some(w) => w.id.to_string().len(),
             None => 0,
         };
@@ -59,12 +54,13 @@ impl LineFormat {
         }
 
         // get length of longest title string
-        line_format.title_width = match items.iter()
-                                             .max_by_key(|n| if !n.body.is_empty() {
-                                                 n.title.len() + 4
-                                             } else {
-                                                 n.title.len()
-                                             }) {
+        line_format.title_width = match items.iter().max_by_key(|n| {
+            if !n.body.is_empty() {
+                n.title.len() + 4
+            } else {
+                n.title.len()
+            }
+        }) {
             Some(n) => {
                 if n.body.is_empty() || search {
                     n.title.len()
@@ -81,8 +77,7 @@ impl LineFormat {
         }
 
         // status length stuff
-        line_format.status_width = if items.iter()
-                                           .any(|n| n.status != Status::Blank) {
+        line_format.status_width = if items.iter().any(|n| n.status != Status::Blank) {
             if condensed {
                 // only display first char of status (e.g. S or U) for condensed print
                 1
@@ -107,8 +102,10 @@ impl LineFormat {
 
         // check to make sure our new line format isn't bigger than the console
         let line_width = line_format.line_width();
-        if console_width > 0 && line_width > console_width &&
-           (line_format.title_width - (line_width - console_width)) > 0 {
+        if console_width > 0
+            && line_width > console_width
+            && (line_format.title_width - (line_width - console_width)) > 0
+        {
             // if it is trim text from the title width since it is always the biggest...
             // if there isn't any statuses, also give the title the colsep char space
             line_format.title_width -= line_width - console_width;

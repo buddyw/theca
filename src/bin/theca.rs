@@ -13,13 +13,13 @@
 //   the theca binary, we finish error unwinding in here and set
 //   the exit status if there was an error.
 
-extern crate theca;
 extern crate docopt;
+extern crate theca;
 
 use docopt::Docopt;
-use theca::{Args, Profile, setup_args, parse_cmds, version};
-use theca::errors::Result;
 use std::process::exit;
+use theca::errors::Result;
+use theca::{parse_cmds, setup_args, version, Args, Profile};
 
 static USAGE: &'static str = "
 theca - simple cli note taking tool
@@ -95,18 +95,20 @@ Miscellaneous:
 
 fn theca_main() -> Result<()> {
     let mut args: Args = Docopt::new(USAGE)
-                                    .unwrap()
-                                    .version(Some(version()))
-                                    .deserialize()?;
+        .unwrap()
+        .version(Some(version()))
+        .deserialize()?;
 
     setup_args(&mut args)?;
 
-    let (mut profile, profile_fingerprint) = Profile::new(&args.flag_profile,
-                                                               &args.flag_profile_folder,
-                                                               &args.flag_key,
-                                                               args.cmd_new_profile,
-                                                               args.flag_encrypted,
-                                                               args.flag_yes)?;
+    let (mut profile, profile_fingerprint) = Profile::new(
+        &args.flag_profile,
+        &args.flag_profile_folder,
+        &args.flag_key,
+        args.cmd_new_profile,
+        args.flag_encrypted,
+        args.flag_yes,
+    )?;
 
     parse_cmds(&mut profile, &mut args, &profile_fingerprint)?;
 
