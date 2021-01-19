@@ -199,7 +199,7 @@ pub fn get_password() -> Result<String> {
     if tty {
         set_term_echo(true)?;
     }
-    writeln!(stdout, "")?;
+    writeln!(stdout)?;
     Ok(key.trim().to_string())
 }
 
@@ -224,10 +224,10 @@ pub fn get_yn_input_with_output<W: Write>(
         let mut input = String::new();
         stdin.read_line(&mut input)?;
         input = input.trim().to_string();
-        if yes.iter().any(|n| &n[..] == input) {
+        if yes.iter().any(|n| n[..] == input) {
             answer = true;
             break;
-        } else if no.iter().any(|n| &n[..] == input) {
+        } else if no.iter().any(|n| n[..] == input) {
             answer = false;
             break;
         };

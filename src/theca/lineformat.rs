@@ -35,7 +35,7 @@ impl LineFormat {
         let colsep = if condensed { 1 } else { 2 };
 
         let mut line_format = LineFormat {
-            colsep: colsep,
+            colsep,
             id_width: 0,
             title_width: 0,
             status_width: 0,

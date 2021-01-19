@@ -1,6 +1,3 @@
-#![cfg_attr(feature = "unstable", allow(unstable_features))]
-#![cfg_attr(feature = "unstable", feature(plugin))]
-#![cfg_attr(feature = "unstable", plugin(clippy))]
 //  _   _
 // | |_| |__   ___  ___ __ _
 // | __| '_ \ / _ \/ __/ _` |
@@ -21,7 +18,7 @@ use std::process::exit;
 use theca::errors::Result;
 use theca::{parse_cmds, setup_args, version, Args, Profile};
 
-static USAGE: &'static str = "
+static USAGE: &str = "
 theca - simple cli note taking tool
 
 Usage:

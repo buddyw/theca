@@ -25,9 +25,9 @@ pub use libc::{STDERR_FILENO, STDIN_FILENO, STDOUT_FILENO};
 use crate::{parse_cmds, Args, BoolFlags};
 
 /// datetime formating string
-pub static DATEFMT: &'static str = "%F %T %z";
+pub static DATEFMT: &str = "%F %T %z";
 /// short datetime formating string for printing
-pub static DATEFMT_SHORT: &'static str = "%F %T";
+pub static DATEFMT_SHORT: &str = "%F %T";
 
 /// Main container of a theca profile file
 #[derive(RustcDecodable, RustcEncodable, Clone)]
@@ -54,7 +54,7 @@ impl Profile {
         }
         Ok((
             Profile {
-                encrypted: encrypted,
+                encrypted,
                 notes: vec![],
             },
             0u64,
@@ -229,7 +229,7 @@ impl Profile {
             args.flag_yes,
         )?;
 
-        if self
+        let is_transfered = self
             .notes
             .iter()
             .find(|n| n.id == args.arg_id[0])
@@ -243,8 +243,8 @@ impl Profile {
                     false,
                 )
             })
-            .is_some()
-        {
+            .is_some();
+        if is_transfered {
             if self
                 .notes
                 .iter()
@@ -286,12 +286,12 @@ impl Profile {
         use_editor: bool,
         print_msg: bool,
     ) -> Result<()> {
-        let title = title.replace("\n", "").to_string();
+        let title = title.replace("\n", "");
 
         let body = if use_stdin {
             let mut buf = String::new();
             stdin().read_to_string(&mut buf)?;
-            buf.to_owned()
+            buf
         } else if !use_editor {
             if body.is_empty() {
                 "".to_string()
@@ -310,10 +310,9 @@ impl Profile {
         };
         self.notes.push(Item {
             id: new_id + 1,
-            title: title,
+            title,
             status: status.unwrap_or(Status::Blank),
-            body: body,
-            //last_touched: strftime(DATEFMT, &now())?,
+            body,
             last_touched: OffsetDateTime::now_local().format(DATEFMT),
         });
         if print_msg {
@@ -362,12 +361,12 @@ impl Profile {
                 if !use_stdin {
                     let mut buf = String::new();
                     stdin().read_to_string(&mut buf)?;
-                    self.notes[item_pos].body = buf.to_owned();
+                    self.notes[item_pos].body = buf;
                 } else {
-                    self.notes[item_pos].title = title.replace("\n", "").to_string()
+                    self.notes[item_pos].title = title.replace("\n", "")
                 }
             } else {
-                self.notes[item_pos].title = title.replace("\n", "").to_string()
+                self.notes[item_pos].title = title.replace("\n", "")
             }
             // change title
         }
@@ -378,7 +377,7 @@ impl Profile {
             self.notes[item_pos].body = if use_stdin {
                 let mut buf = String::new();
                 stdin().read_to_string(&mut buf)?;
-                buf.to_owned()
+                buf
             } else if use_editor {
                 if istty(STDOUT_FILENO) && istty(STDIN_FILENO) {
                     if encrypted && !yes {
@@ -569,7 +568,7 @@ impl Profile {
         flags: BoolFlags,
         status: Option<Status>,
     ) -> Result<()> {
-        let notes: Vec<Item> = if flags.regex {
+        let mut notes: Vec<Item> = if flags.regex {
             let re = match Regex::new(&pattern[..]) {
                 Ok(r) => r,
                 Err(e) => return specific_fail!(format!("regex error: {}.", e)),
@@ -599,7 +598,7 @@ impl Profile {
                 .collect()
         };
         if !notes.is_empty() {
-            sorted_print(&mut notes.clone(), limit, flags, status)?;
+            sorted_print(&mut notes, limit, flags, status)?;
         } else if flags.json {
             println!("[]");
         } else {

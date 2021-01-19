@@ -11,7 +11,6 @@
 //   lib errors.
 
 use crypto::symmetriccipher::SymmetricCipherError;
-use docopt;
 use rustc_serialize::json::EncoderError;
 use std::convert::From;
 use std::error::Error as StdError;
@@ -19,7 +18,6 @@ use std::fmt;
 use std::io::Error as IoError;
 use std::string::FromUtf8Error;
 use std::time::SystemTimeError;
-use term;
 use time::ParseError;
 
 pub type Result<T> = ::std::result::Result<T, Error>;
@@ -97,7 +95,7 @@ impl From<IoError> for Error {
     fn from(err: IoError) -> Error {
         Error {
             kind: ErrorKind::Generic,
-            desc: err.to_string().into(),
+            desc: err.to_string(),
             detail: None,
         }
     }
@@ -106,7 +104,7 @@ impl From<IoError> for Error {
 impl From<term::Error> for Error {
     fn from(err: term::Error) -> Error {
         Error {
-            desc: err.to_string().into(),
+            desc: err.to_string(),
             kind: ErrorKind::Term(err),
             detail: None,
         }
@@ -116,7 +114,7 @@ impl From<term::Error> for Error {
 impl From<(ErrorKind, &'static str)> for Error {
     fn from((kind, desc): (ErrorKind, &'static str)) -> Error {
         Error {
-            kind: kind,
+            kind,
             desc: desc.to_string(),
             detail: None,
         }
@@ -127,7 +125,7 @@ impl From<SystemTimeError> for Error {
     fn from(err: SystemTimeError) -> Error {
         Error {
             kind: ErrorKind::Generic,
-            desc: err.to_string().into(),
+            desc: err.to_string(),
             detail: None,
         }
     }
