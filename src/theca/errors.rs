@@ -26,6 +26,7 @@ pub type Result<T> = ::std::result::Result<T, Error>;
 
 #[derive(Debug)]
 pub enum ErrorKind {
+    Chrono(chrono::ParseError),
     Term(term::Error),
     InternalIo(IoError),
     Generic,
@@ -97,6 +98,16 @@ impl From<EncoderError> for Error {
             kind: ErrorKind::Generic,
             desc: err.to_string(),
             detail: None,
+        }
+    }
+}
+
+impl From<chrono::ParseError> for Error {
+    fn from(err: chrono::ParseError) -> Error {
+        Error {
+            kind: ErrorKind::Chrono(err),
+            desc: "Failed to parse date/time".to_string(),
+            detail: Some(err.to_string()),
         }
     }
 }

@@ -6,7 +6,6 @@ use serde::{Serialize, Deserialize};
 
 // random things
 use regex::Regex;
-use time::OffsetDateTime;
 
 // theca imports
 use utils::c::istty;
@@ -282,8 +281,7 @@ impl Profile {
             title: title,
             status: status.unwrap_or(Status::Blank),
             body: body,
-            //last_touched: strftime(DATEFMT, &now())?,
-            last_touched: OffsetDateTime::now_local().format(DATEFMT),
+            last_touched: chrono::Local::now().format(DATEFMT).to_string(),
         });
         if print_msg {
             println!("note {} added", new_id + 1);
@@ -377,7 +375,7 @@ impl Profile {
         };
 
         // update last_touched
-        self.notes[item_pos].last_touched = OffsetDateTime::now_local().format(DATEFMT);
+        self.notes[item_pos].last_touched = chrono::Local::now().format(DATEFMT).to_string();
         println!("edited note {}", self.notes[item_pos].id);
         Ok(())
     }
@@ -398,7 +396,7 @@ impl Profile {
                             .iter()
                             .min_by_key(|n| match parse_last_touched(&*n.last_touched) {
                                 Ok(o) => o,
-                                Err(_) => OffsetDateTime::now_local(),
+                                Err(_) => chrono::Local::now(),
                             }) {
             Some(n) => localize_last_touched_string(&*n.last_touched)?,
             None => return specific_fail_str!("last_touched is not properly formated"),
@@ -407,7 +405,7 @@ impl Profile {
                             .iter()
                             .max_by_key(|n| match parse_last_touched(&*n.last_touched) {
                                 Ok(o) => o,
-                                Err(_) => OffsetDateTime::now_local(),
+                                Err(_) => chrono::Local::now(),
                             }) {
             Some(n) => localize_last_touched_string(&*n.last_touched)?,
             None => return specific_fail_str!("last_touched is not properly formated"),

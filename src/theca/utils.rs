@@ -1,4 +1,3 @@
-//  _   _
 // | |_| |__   ___  ___ __ _
 // | __| '_ \ / _ \/ __/ _` |
 // | |_| | | |  __/ (_| (_| |
@@ -20,7 +19,7 @@ use std::iter::repeat;
 use std::time::UNIX_EPOCH;
 
 // time imports
-use time::{OffsetDateTime, UtcOffset};
+//use time::{OffsetDateTime, UtcOffset};
 
 // term imports
 use term::{self, stdout};
@@ -38,7 +37,7 @@ use std::io::Error as IoError;
 use BoolFlags;
 use errors::{Result, Error};
 use lineformat::LineFormat;
-use profile::{DATEFMT, DATEFMT_SHORT, Profile};
+use profile::{DATEFMT_SHORT, Profile};
 use item::{Item, Status};
 
 pub use libc::{STDIN_FILENO, STDOUT_FILENO, STDERR_FILENO};
@@ -147,7 +146,7 @@ pub fn drop_to_editor(contents: &str) -> Result<String> {
     // setup temporary directory
     let tmpdir = TempDir::new("theca")?;
     // setup temporary file to write/read
-    let tmppath = tmpdir.path().join(&format!("{}", OffsetDateTime::timestamp(OffsetDateTime::now_utc()))[..]);
+    let tmppath = tmpdir.path().join(&format!("{}", chrono::Local::now().timestamp()));
     let mut tmpfile = File::create(&tmppath)?;
     // let mut tmpfile = File::open_mode(&tmppath, Open, ReadWrite)?;
     tmpfile.write_all(contents.as_bytes())?;
@@ -367,13 +366,14 @@ pub fn find_profile_folder(profile_folder: &str) -> Result<PathBuf> {
     }
 }
 
-pub fn parse_last_touched(lt: &str) -> Result<OffsetDateTime> {
-    Ok(OffsetDateTime::parse(lt, DATEFMT)?)
+pub fn parse_last_touched(lt: &str) -> Result<chrono::DateTime<chrono::Local>> {
+    //Ok(OffsetDateTime::parse(lt, DATEFMT)?)
+    lt.parse::<chrono::DateTime<chrono::Local>>().map_err(Error::from)
 }
 
 pub fn localize_last_touched_string(lt: &str) -> Result<String> {
     let t = parse_last_touched(lt)?;
-    Ok(t.to_offset(UtcOffset::local_offset_at(t)).format(DATEFMT_SHORT))
+    Ok(t.format(DATEFMT_SHORT).to_string())
 }
 
 pub fn cmp_last_touched(a: &str, b: &str) -> Result<Ordering> {

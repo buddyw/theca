@@ -310,7 +310,7 @@ mod tests {
             last_touched: "2016-01-08 15:31:14 -0800".into(),
         };
         assert_eq!(write_item_test_case(item, false),
-                   "0   This is a title (+)  2016-01-08 18:31:14\n");
+                   "0   This is a title (+)  2016-01-08 15:31:14\n");
     }
 
     #[test]
@@ -325,7 +325,7 @@ mod tests {
             last_touched: "2016-07-08 15:31:14 -0800".into(),
         };
         assert_eq!(write_item_test_case(item, false),
-                   "0   This is a title  2016-07-08 19:31:14\n");
+                   "0   This is a title  2016-07-08 16:31:14\n");
     }
 
     #[test]
@@ -338,7 +338,7 @@ mod tests {
             last_touched: "2016-07-08 15:31:14 -0800".into(),
         };
         assert_eq!(write_item_test_case(item, true),
-                   "0   This is a title      2016-07-08 19:31:14\n\tThis is the body\n\tit has \
+                   "0   This is a title      2016-07-08 16:31:14\n\tThis is the body\n\tit has \
                     multiple lines\n");
     }
 
@@ -353,7 +353,7 @@ mod tests {
             last_touched: "2016-07-08 15:31:14 -0800".into(),
         };
         assert_eq!(write_item_test_case(item, true),
-                   "0   This is a title  2016-07-08 19:31:14\n");
+                   "0   This is a title  2016-07-08 16:31:14\n");
     }
 
     #[test]
@@ -366,7 +366,7 @@ mod tests {
             last_touched: "2016-07-08 15:31:14 -0800".into(),
         };
         assert_eq!(write_item_test_case(item, false),
-                   "0   This is a title (+)  Started  2016-07-08 19:31:14\n");
+                   "0   This is a title (+)  Started  2016-07-08 16:31:14\n");
 
     }
 }
