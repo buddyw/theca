@@ -2,10 +2,10 @@
 use std::io::{stdin, Read, Write};
 use std::fs::{File, create_dir};
 
+use serde::{Serialize, Deserialize};
+
 // random things
 use regex::Regex;
-use rustc_serialize::Encodable;
-use rustc_serialize::json::{decode, as_pretty_json, Encoder};
 use time::OffsetDateTime;
 
 // theca imports
@@ -26,7 +26,7 @@ pub static DATEFMT: &'static str = "%F %T %z";
 pub static DATEFMT_SHORT: &'static str = "%F %T";
 
 /// Main container of a theca profile file
-#[derive(RustcDecodable, RustcEncodable, Clone)]
+#[derive(Deserialize, Serialize, Clone)]
 pub struct Profile {
     pub encrypted: bool,
     pub notes: Vec<Item>,
@@ -75,7 +75,7 @@ impl Profile {
             } else {
                 String::from_utf8(contents_buf)?
             };
-            let decoded: Profile = match decode(&*contents) {
+            let decoded: Profile = match serde_json::from_str(&*contents) {
                 Ok(s) => s,
                 Err(_) => {
                     return specific_fail!(format!("invalid JSON in {}", profile_path.display()))
@@ -173,18 +173,14 @@ impl Profile {
         let mut file = File::create(profile_path)?;
 
         // encode to buffer
-        let mut json_prof = String::new();
-        {
-            let mut encoder = Encoder::new_pretty(&mut json_prof);
-            self.encode(&mut encoder)?;
-        }
+        let json_prof = serde_json::to_string(&self);
 
         // encrypt json if its an encrypted profile
         let buffer = if self.encrypted {
             let key = password_to_key(&*args.flag_key);
-            encrypt(&json_prof.into_bytes(), &*key)?
+            encrypt(&json_prof.unwrap().into_bytes(), &*key)?
         } else {
-            json_prof.into_bytes()
+            json_prof.unwrap().into_bytes()
         };
 
         // write buffer to file
@@ -439,7 +435,7 @@ impl Profile {
             None => return specific_fail!(format!("note {} doesn't exist", id)),
         };
         if json {
-            println!("{}", as_pretty_json(&self.notes[note_pos].clone()));
+            println!("{}", serde_json::to_string(&self.notes[note_pos].clone()).unwrap());
         } else {
             let tty = istty(STDOUT_FILENO);
 

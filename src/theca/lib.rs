@@ -36,7 +36,7 @@ use errors::Result;
 
 pub use self::libc::{STDIN_FILENO, STDOUT_FILENO, STDERR_FILENO};
 pub use profile::Profile;
-pub use serde::Deserialize;
+use serde::{Deserialize};
 
 #[macro_use]pub mod errors;
 pub mod profile;

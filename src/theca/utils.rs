@@ -27,7 +27,6 @@ use term::{self, stdout};
 use term::Attr::Bold;
 
 // json imports
-use rustc_serialize::json::{as_pretty_json, decode};
 
 // tempdir imports
 use tempdir::TempDir;
@@ -334,7 +333,7 @@ pub fn sorted_print(notes: &mut Vec<Item>,
     }
 
     if json {
-        println!("{}", as_pretty_json(&notes[0..limit].to_vec()))
+        println!("{}", serde_json::to_string(&notes[0..limit].to_vec()).unwrap())
     } else {
         let line_format = LineFormat::new(&notes[0..limit], condensed, search_body)?;
         if !condensed && !json {
@@ -397,7 +396,7 @@ pub fn validate_profile_from_path(profile_path: &PathBuf) -> (bool, bool) {
                 match String::from_utf8(contents_buf) {
                     Ok(s) => {
                         // well it's a .json and valid utf-8 at least
-                        match decode::<Profile>(&*s) {
+                        match serde_json::from_str::<Profile>(&*s) {
                             // yup
                             Ok(_) => (true, false),
                             // noooooop
