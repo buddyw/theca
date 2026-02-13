@@ -222,9 +222,13 @@ pub fn r#run() -> Result<()> {
              profile.list_notes(limit.unwrap_or(0), flags, st)?;
         }
         None => {
-            // Default list
-            let flags = ProfileFlags::default(); // defaults to false for json/condensed etc
-            profile.list_notes(0, flags, None)?;
+            if let Some(id) = cli.id {
+                profile.view_note(id, false, false)?;
+            } else {
+                // Default list
+                let flags = ProfileFlags::default(); // defaults to false for json/condensed etc
+                profile.list_notes(0, flags, None)?;
+            }
         }
     }
 

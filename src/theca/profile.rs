@@ -107,7 +107,13 @@ impl Profile {
                         .map_err(|_| "Failed to read encrypted file as UTF-8/Base64. Is it a legacy binary?")?;
                      // 2. Decode Base64
                      let encrypted_bytes = general_purpose::STANDARD.decode(b64_str.trim())
-                        .map_err(|e| format!("Base64 decode error: {}", e))?;
+                        .map_err(|e| {
+                            if b64_str.contains("encrypted:") {
+                                format!("Profile on disk appears to be plaintext (found 'encrypted:' key), but --encrypted was specified. Try without --encrypted. Original error: {}", e)
+                            } else {
+                                format!("Base64 decode error: {}", e)
+                            }
+                        })?;
                      // 3. Decrypt
                      match decrypt(&encrypted_bytes, k) {
                         Ok(decrypted) => String::from_utf8(decrypted)?,
