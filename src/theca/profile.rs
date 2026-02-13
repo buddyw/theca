@@ -195,12 +195,8 @@ impl Profile {
         let mut kept_files = std::collections::HashSet::new();
 
         for note in &self.notes {
-            let sanitized = crate::utils::sanitize_filename(&note.title);
-            let filename = if sanitized.is_empty() {
-                format!("note_{}.md", note.id)
-            } else {
-                format!("{}.md", sanitized)
-            };
+            let sanitized_title = crate::utils::sanitize_filename(&note.title);
+            let filename = format!("{}-{}.md", note.id, sanitized_title);
             let file_path = profile_dir.join(&filename);
 
             let mut content = String::from("---\n");
@@ -403,7 +399,11 @@ impl Profile {
                 body.join("\n")
             }
         } else if istty(STDOUT_FILENO) && istty(STDIN_FILENO) {
-            drop_to_editor(&"".to_string())?
+            let next_id = match self.notes.last() {
+                Some(n) => n.id + 1,
+                None => 1,
+            };
+            drop_to_editor(&"".to_string(), Some(next_id), Some(&title))?
         } else {
             "".to_string()
         };
@@ -489,7 +489,7 @@ impl Profile {
                         return specific_fail_str!("ok bye ♥");
                     }
                 }
-                let new_body = drop_to_editor(&self.notes[item_pos].body)?;
+                let new_body = drop_to_editor(&self.notes[item_pos].body, Some(id), Some(&self.notes[item_pos].title))?;
                 if self.notes[item_pos].body != new_body {
                     self.notes[item_pos].body = new_body;
                 }
@@ -776,12 +776,19 @@ impl Profile {
 
         // Add new/invalid notes
         for (filename, content) in new_notes_raw {
-            let title = if filename.ends_with(".md") {
+            let mut title = if filename.ends_with(".md") {
                 filename[..filename.len() - 3].to_string()
             } else {
                 filename
             };
             
+            // Discard any "<N>-" at the start of the filename
+            if let Some(pos) = title.find('-') {
+                if title[..pos].chars().all(|c| c.is_ascii_digit()) {
+                    title = title[pos+1..].to_string();
+                }
+            }
+
             // If it had frontmatter but was "invalid" (e.g. no ID), strip it for the body
             let body = if content.starts_with("---\n") {
                  let parts: Vec<&str> = content.splitn(3, "---\n").collect();

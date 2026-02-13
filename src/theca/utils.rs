@@ -53,11 +53,23 @@ pub fn extract_status(status_str: Option<String>) -> Result<Option<Status>> {
     }
 }
 
-pub fn drop_to_editor(contents: &str) -> Result<String> {
+pub fn drop_to_editor(contents: &str, id: Option<usize>, title: Option<&str>) -> Result<String> {
+    let sanitized = if let Some(t) = title {
+        sanitize_filename(t)
+    } else {
+        "new".to_string()
+    };
+    
+    let prefix = if let Some(i) = id {
+        format!("note-{}-{}-", i, sanitized)
+    } else {
+        format!("note-new-{}-", sanitized)
+    };
+
     // setup temporary file
     let tmpfile = Builder::new()
-        .prefix("theca")
-        .suffix(".txt")
+        .prefix(&prefix)
+        .suffix(".md")
         .rand_bytes(5)
         .tempfile()?;
             
@@ -70,7 +82,7 @@ pub fn drop_to_editor(contents: &str) -> Result<String> {
     }
 
     let editor = var("VISUAL").or_else(|_| var("EDITOR"))
-        .unwrap_or_else(|_| "nano".to_string()); // Default to nano if not set rather than fail? Or fail. Originals failed.
+        .unwrap_or_else(|_| "nano".to_string()); // Default to nano if not set
         
     // lets start `editor` and edit the file at `tmppath`
     let mut editor_command = Command::new(&editor);

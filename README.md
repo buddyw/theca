@@ -1,11 +1,10 @@
 
-	#  _   _                    
-	# | |_| |__   ___  ___ __ _
-	# | __|  _ \ / _ \/ __/ _` |
-	# | |_| | | |  __/ (_| (_| |
-	#  \__|_| |_|\___|\___\__,_|
-	#
-
+	#  _   _                    ____
+	# | |_| |__   ___  ___ __ _|___ \
+	# | __| '_ \ / _ \/ __/ _` | __) |
+	# | |_| | | |  __/ (_| (_| |/ __/
+	#  \__|_| |_|\___|\___\__,_|_____|
+	# 
 ![example usage of theca](screenshots/main.png)
 
 A simple, fully featured, command line note taking tool written in [*Rust*](http://www.rust-lang.org/). 
@@ -14,7 +13,8 @@ A simple, fully featured, command line note taking tool written in [*Rust*](http
 
 * **Secure by Design**: Uses **XChaCha20-Poly1305** for authenticated encryption and **Argon2id** for robust password hashing.
 * **Modern Format**: Stores profiles in **YAML** for readability and editability.
-* **Encrypted Profiles**: Full support for encrypted profiles with Base64 encoding for safe storage.
+* **Obsidian Integration**: Generates Obsidian compatible Markdown files for non-encrypted profiles with option to Sync.
+* **Encrypted Profiles**: Full support for encrypted profiles with for safe storage.
 * **Multiple Profiles**: Segregate your notes into different profiles (e.g., `work`, `personal`).
 * **Search**: Powerful keyword and regex search capabilities.
 * **Editors**: Drop into your favorite `$EDITOR` to write complex notes.
@@ -69,7 +69,11 @@ Commands:
     info              Show profile info
     clear             Clear all notes
     list              List notes (default if no command)
+    sync              Sync profile with markdown files
     help              Print this message or the help of the given subcommand(s)
+
+Arguments:
+    [ID]  View note by ID (postional)
 
 Options:
     -p, --profile <PROFILE>                Profile to use [default: default]
