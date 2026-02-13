@@ -11,9 +11,9 @@
 //   tries to construct a line format that won't overflow the console
 //   width.
 
-use errors::Result;
-use item::{Item, Status};
-use utils::termsize;
+use crate::errors::Result;
+use crate::item::{Item, Status};
+use crate::utils::termsize;
 
 #[derive(Clone, Copy)]
 pub struct LineFormat {

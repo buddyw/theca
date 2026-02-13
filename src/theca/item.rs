@@ -2,11 +2,9 @@ use std::fmt;
 use std::iter::repeat;
 use std::io::{self, Write};
 
-/// use rustc_serialize::{self, Decodable, Encodable};
-
-use lineformat::LineFormat;
-use utils::{format_field, localize_last_touched_string};
-use errors::Result;
+use crate::lineformat::LineFormat;
+use crate::utils::{format_field, localize_last_touched_string};
+use crate::errors::Result;
 use serde::{Serialize, Deserialize};
 
 /// Represents a note within a profile
@@ -40,7 +38,7 @@ impl Item {
         if !self.body.is_empty() && !search_body {
             write!(output,
                         "{}",
-                        format_field(&self.title, line_format.title_width - 4, true))?;
+                        format_field(&self.title, if line_format.title_width > 4 { line_format.title_width - 4 } else { 0 }, true))?;
             write!(output, "{}", format_field(&" (+)".to_string(), 4, false))?;
         } else {
             write!(output,
@@ -76,47 +74,6 @@ pub enum Status {
     Started,
     Urgent,
 }
-
-// impl Encodable for Status {
-//     fn encode<S: rustc_serialize::Encoder>(&self,
-//                                            encoder: &mut S)
-//                                            -> ::std::result::Result<(), S::Error> {
-//         match *self {
-//             Status::Blank => {
-//                 encoder.emit_enum("Status", |encoder| {
-//                     encoder.emit_enum_variant("", 0usize, 0usize, |_| Ok(()))
-//                 })
-//             }
-//             Status::Started => {
-//                 encoder.emit_enum("Status", |encoder| {
-//                     encoder.emit_enum_variant("Started", 1usize, 0usize, |_| Ok(()))
-//                 })
-//             }
-//             Status::Urgent => {
-//                 encoder.emit_enum("Status", |encoder| {
-//                     encoder.emit_enum_variant("Urgent", 2usize, 0usize, |_| Ok(()))
-//                 })
-//             }
-//         }
-//     }
-// }
-
-// impl Decodable for Status {
-//     fn decode<D: ::rustc_serialize::Decoder>(decoder: &mut D)
-//                                              -> ::std::result::Result<Status, D::Error> {
-//         decoder.read_enum("Status", |decoder| {
-//             decoder.read_enum_variant(&["", "Started", "Urgent"], |_, i| {
-//                 Ok(match i {
-//                     0usize => Status::Blank,
-//                     1usize => Status::Started,
-//                     2usize => Status::Urgent,
-//                     _ => panic!("internal error: entered unreachable code"),
-// 
-//                 })
-//             })
-//         })
-//     }
-// }
 
 impl fmt::Display for Status {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {

@@ -1,23 +1,26 @@
 // std lib imports
 use std::io::{stdin, Read, Write};
 use std::fs::{File, create_dir};
+// use std::path::{Path, PathBuf};
 
 use serde::{Serialize, Deserialize};
+use base64::{Engine as _, engine::general_purpose};
 
 // random things
 use regex::Regex;
 
 // theca imports
-use utils::c::istty;
-use utils::{drop_to_editor, pretty_line, get_yn_input, sorted_print, localize_last_touched_string,
+use crate::utils::istty;
+use crate::utils::{drop_to_editor, pretty_line, get_yn_input, sorted_print, localize_last_touched_string,
             parse_last_touched, find_profile_folder, profile_fingerprint};
-use errors::{Result, Error};
-use crypt::{encrypt, decrypt, password_to_key};
-use item::{Status, Item};
+use crate::{specific_fail, specific_fail_str};
+use crate::errors::Result;
+
+// Use the new crypt module
+use crate::crypt::{encrypt, decrypt};
+use crate::item::{Status, Item};
 
 pub use libc::{STDIN_FILENO, STDOUT_FILENO, STDERR_FILENO};
-
-use {parse_cmds, Args, BoolFlags};
 
 /// datetime formating string
 pub static DATEFMT: &'static str = "%F %T %z";
@@ -31,8 +34,36 @@ pub struct Profile {
     pub notes: Vec<Item>,
 }
 
+pub struct ProfileFlags {
+    pub condensed: bool,
+    pub datesort: bool,
+    pub editor: bool,
+    pub encrypted: bool,
+    pub yaml: bool,
+    pub regex: bool,
+    pub reverse: bool,
+    pub search_body: bool,
+    pub yes: bool,
+}
+
+impl Default for ProfileFlags {
+    fn default() -> Self {
+        ProfileFlags {
+            condensed: false,
+            datesort: false,
+            editor: false,
+            encrypted: false,
+            yaml: false,
+            regex: false,
+            reverse: false,
+            search_body: false,
+            yes: false,
+        }
+    }
+}
+
 impl Profile {
-    fn from_scratch(profile_folder: &str, encrypted: bool, yes: bool) -> Result<(Profile, u64)> {
+    fn from_scratch(profile_folder: &Option<String>, encrypted: bool, yes: bool) -> Result<(Profile, u64)> {
         let profile_path = find_profile_folder(profile_folder)?;
         // if the folder doesn't exist, make it yo!
         if !profile_path.exists() {
@@ -53,15 +84,15 @@ impl Profile {
     }
 
     fn from_existing_profile(profile_name: &str,
-                             profile_folder: &str,
-                             key: &str,
+                             profile_folder: &Option<String>,
+                             key: Option<&String>,
                              encrypted: bool)
                              -> Result<(Profile, u64)> {
         // set profile folder
         let mut profile_path = find_profile_folder(profile_folder)?;
 
         // set profile name
-        profile_path.push(&(profile_name.to_string() + ".json"));
+        profile_path.push(&(profile_name.to_string() + ".yaml"));
 
         // attempt to read profile
         if profile_path.is_file() {
@@ -69,30 +100,54 @@ impl Profile {
             let mut contents_buf = vec![];
             file.read_to_end(&mut contents_buf)?;
             let contents = if encrypted {
-                let key = password_to_key(&key[..]);
-                String::from_utf8(decrypt(&*contents_buf, &*key)?)?
+                if let Some(k) = key {
+                     // Decrypt
+                     // 1. Read as UTF-8 string (Base64)
+                     let b64_str = String::from_utf8(contents_buf)
+                        .map_err(|_| "Failed to read encrypted file as UTF-8/Base64. Is it a legacy binary?")?;
+                     // 2. Decode Base64
+                     let encrypted_bytes = general_purpose::STANDARD.decode(b64_str.trim())
+                        .map_err(|e| format!("Base64 decode error: {}", e))?;
+                     // 3. Decrypt
+                     match decrypt(&encrypted_bytes, k) {
+                        Ok(decrypted) => String::from_utf8(decrypted)?,
+                        Err(_) => return specific_fail_str!("Decryption failed. Wrong key?"),
+                     }
+                } else {
+                    return specific_fail_str!("Profile is encrypted but no key provided");
+                }
             } else {
                 String::from_utf8(contents_buf)?
             };
-            let decoded: Profile = match serde_json::from_str(&*contents) {
+            
+            let decoded: Profile = match serde_yaml::from_str(&contents) {
                 Ok(s) => s,
-                Err(_) => {
-                    return specific_fail!(format!("invalid JSON in {}", profile_path.display()))
+                Err(e) => {
+                     // Fallback check for JSON for migration? (User said breaking changes ok, but helpful to know)
+                     // For now strictly YAML as requested.
+                    return specific_fail!(format!("invalid YAML in {}: {}", profile_path.display(), e))
                 }
             };
-            let fingerprint = profile_fingerprint(profile_path)?;
+            let fingerprint = profile_fingerprint(&profile_path)?;
             Ok((decoded, fingerprint))
         } else if profile_path.exists() {
             specific_fail!(format!("{} is not a file.", profile_path.display()))
         } else {
+            // Check if json exists to warn user?
+             let mut json_path = profile_path.clone();
+             json_path.set_extension("json");
+             if json_path.exists() {
+                 return specific_fail!(format!("Found legacy JSON profile at {}. Please migrate or rename.", json_path.display()));
+             }
+
             specific_fail!(format!("{} does not exist.", profile_path.display()))
         }
     }
 
-    /// setup a Profile struct based on the command line arguments
+    /// setup a Profile struct
     pub fn new(profile_name: &str,
-               profile_folder: &str,
-               key: &str,
+               profile_folder: &Option<String>,
+               key: Option<&String>,
                new_profile: bool,
                encrypted: bool,
                yes: bool)
@@ -116,20 +171,19 @@ impl Profile {
         Ok(())
     }
 
-    // FIXME (this as well as transfer_note, shouldn't *need* to take all of `args`)
     /// save the profile back to file (either plaintext or encrypted)
-    pub fn save_to_file(&mut self, args: &Args, fingerprint: &u64) -> Result<()> {
-        // set profile folder
-        let mut profile_path = find_profile_folder(&args.flag_profile_folder)?;
+    pub fn save_to_file(&mut self, 
+                        profile_name: &str, 
+                        profile_folder: &Option<String>, 
+                        key: Option<&String>, 
+                        new_profile: bool, 
+                        yes: bool,
+                        fingerprint: &u64) -> Result<()> {
+        
+        let mut profile_path = find_profile_folder(profile_folder)?;
+        profile_path.push(&(profile_name.to_string() + ".yaml"));
 
-        // set file name
-        if args.cmd_new_profile {
-            profile_path.push(&(args.arg_name[0].to_string() + ".json"));
-        } else {
-            profile_path.push(&(args.flag_profile.to_string() + ".json"));
-        }
-
-        if args.cmd_new_profile && profile_path.exists() && !args.flag_yes {
+        if new_profile && profile_path.exists() && !yes {
             let message = format!("profile {} already exists would you like to overwrite it?\n",
                                   profile_path.display());
             if !get_yn_input(&message)? {
@@ -139,32 +193,9 @@ impl Profile {
 
         if fingerprint > &0u64 {
             let new_fingerprint = profile_fingerprint(&profile_path)?;
-            if &new_fingerprint != fingerprint && !args.flag_yes {
-                let message = format!("changes have been made to the profile '{}' on disk since \
-                                       it was loaded, would you like to attempt to merge them?\n",
-                                      args.flag_profile);
-                if !get_yn_input(&message)? {
-                    return specific_fail_str!("ok bye ♥");
-                }
-                let mut new_args = args.clone();
-                if args.flag_editor {
-                    new_args.flag_editor = false;
-                    new_args.flag_body[0] = match self.notes.last() {
-                        Some(n) => n.body.clone(),
-                        None => "".to_string(),
-                    };
-                }
-                let (mut changed_profile, changed_fingerprint) = Profile::new(
-                    &new_args.flag_profile,
-                    &new_args.flag_profile_folder,
-                    &new_args.flag_key,
-                    new_args.cmd_new_profile,
-                    new_args.flag_encrypted,
-                    new_args.flag_yes
-                    )?;
-                parse_cmds(&mut changed_profile, &mut new_args, &changed_fingerprint)?;
-                changed_profile.save_to_file(&new_args, &0u64)?;
-                return Ok(());
+            if &new_fingerprint != fingerprint && !yes {
+                 // Simple merge conflict check
+                 return specific_fail!(format!("Profile '{}' has been modified on disk. Please reload.", profile_name));
             }
         }
 
@@ -172,14 +203,18 @@ impl Profile {
         let mut file = File::create(profile_path)?;
 
         // encode to buffer
-        let json_prof = serde_json::to_string(&self);
+        let yaml_prof = serde_yaml::to_string(&self).map_err(|e| format!("Serialization error: {}", e))?;
 
-        // encrypt json if its an encrypted profile
+        // encrypt if its an encrypted profile
         let buffer = if self.encrypted {
-            let key = password_to_key(&*args.flag_key);
-            encrypt(&json_prof.unwrap().into_bytes(), &*key)?
+            if let Some(k) = key {
+                let encrypted_bytes = encrypt(yaml_prof.as_bytes(), k).map_err(|e| format!("Encryption error: {}", e))?;
+                general_purpose::STANDARD.encode(&encrypted_bytes).into_bytes()
+            } else {
+                 return specific_fail_str!("Profile is encrypted but no key provided");
+            }
         } else {
-            json_prof.unwrap().into_bytes()
+            yaml_prof.into_bytes()
         };
 
         // write buffer to file
@@ -188,60 +223,58 @@ impl Profile {
         Ok(())
     }
 
-    // FIXME (this as well as save_to_file, shouldn't *need* to take all of `args`)
     /// transfer a note from the profile to another profile
-    pub fn transfer_note(&mut self, args: &Args) -> Result<()> {
-        if args.flag_profile == args.arg_name[0] {
-            return specific_fail!(format!("cannot transfer a note from a profile to itself ({} \
-                                           -> {})",
-                                          args.flag_profile,
-                                          args.arg_name[0]));
+    pub fn transfer_note(&mut self, 
+                        note_id: usize, 
+                        target_profile_name: &str,
+                        current_profile_name: &str,
+                        profile_folder: &Option<String>,
+                        key: Option<&String>,
+                        encrypted: bool,
+                        yes: bool) -> Result<()> {
+        
+        if current_profile_name == target_profile_name {
+            return specific_fail!(format!("cannot transfer a note from a profile to itself"));
         }
 
-        let mut trans_args = args.clone();
-        trans_args.flag_profile = args.arg_name[0].clone();
-        let (mut trans_profile, trans_fingerprint) = Profile::new(&args.arg_name[0],
-                                                                       &args.flag_profile_folder,
-                                                                       &args.flag_key,
-                                                                       args.cmd_new_profile,
-                                                                       args.flag_encrypted,
-                                                                       args.flag_yes)?;
+        let (mut trans_profile, trans_fingerprint) = Profile::new(
+            target_profile_name,
+            profile_folder,
+            key,
+            false, // assuming target exists or we fail? Original logic: new=cmd_new_profile from args.
+            // But logic seems to imply we load target. 
+            // If target needs to be created, we should probably know.
+            // The original code passed `args.cmd_new_profile` which likely meant 
+            // `theca new` command, so transferring likely assumes existing target unless new flag used?
+            // Let's assume false for transfer target usually. 
+            encrypted, // This assumes target has same encryption?? Original used args.flag_encrypted.
+            yes)?;
 
-        if self.notes
-               .iter()
-               .find(|n| n.id == args.arg_id[0])
-               .map(|n| {
-                   trans_profile.add_note(&n.title,
-                                          &[n.body.clone()],
-                                          Some(n.status),
-                                          false,
-                                          false,
-                                          false)
-               })
-               .is_some() {
-            if self.notes
-                   .iter()
-                   .position(|n| n.id == args.arg_id[0])
-                   .map(|e| self.notes.remove(e))
-                   .is_some() {
-                trans_profile.save_to_file(&trans_args, &trans_fingerprint)?
-            } else {
-                return specific_fail!(format!("couldn't remove note {} in {}, aborting nothing \
-                                               will be saved",
-                                              args.arg_id[0],
-                                              args.flag_profile));
-            }
+        if let Some(pos) = self.notes.iter().position(|n| n.id == note_id) {
+             let n = &self.notes[pos];
+             trans_profile.add_note(&n.title,
+                                    &[n.body.clone()],
+                                    Some(n.status),
+                                    false,
+                                    false,
+                                    false)?;
+             
+             // Save target
+             trans_profile.save_to_file(target_profile_name, profile_folder, key, false, yes, &trans_fingerprint)?;
+             
+             // Remove from source
+             self.notes.remove(pos);
+             
+             println!("transfered [{}: note {} -> {}: note {}]",
+                  current_profile_name,
+                  note_id,
+                  target_profile_name,
+                  trans_profile.notes.last().map_or(0, |n| n.id));
+
         } else {
-            return specific_fail!(format!("could not transfer note {} from {} -> {}",
-                                          args.arg_id[0],
-                                          args.flag_profile,
-                                          args.arg_name[0]));
+            return specific_fail!(format!("Note {} not found", note_id));
         }
-        println!("transfered [{}: note {} -> {}: note {}]",
-                 args.flag_profile,
-                 args.arg_id[0],
-                 args.arg_name[0],
-                 trans_profile.notes.last().map_or(0, |n| n.id));
+        
         Ok(())
     }
 
@@ -261,10 +294,10 @@ impl Profile {
             stdin().read_to_string(&mut buf)?;
             buf.to_owned()
         } else if !use_editor {
-            if body.is_empty() {
+             if body.is_empty() {
                 "".to_string()
             } else {
-                body[0].clone()
+                body.join("\n")
             }
         } else if istty(STDOUT_FILENO) && istty(STDIN_FILENO) {
             drop_to_editor(&"".to_string())?
@@ -308,13 +341,13 @@ impl Profile {
     /// edit an item in the profile
     pub fn edit_note(&mut self,
                      id: usize,
-                     title: &str,
-                     body: &[String],
-                     status: Option<Status>,
+                     title: &Option<String>,
+                     body: &Option<String>,
+                     status: &Option<Status>,
                      use_stdin: bool,
-                     flags: BoolFlags)
+                     flags: ProfileFlags)
                      -> Result<()> {
-        // let id = args.arg_id[0];
+        
         let item_pos: usize = match self.notes.iter().position(|n| n.id == id) {
             Some(i) => i,
             None => return specific_fail!(format!("note {} doesn't exist", id)),
@@ -322,57 +355,43 @@ impl Profile {
         let use_editor = flags.editor;
         let encrypted = flags.encrypted;
         let yes = flags.yes;
-        if !title.is_empty() {
-            if title.replace("\n", "") == "-" {
-                if !use_stdin {
-                    let mut buf = String::new();
-                    stdin().read_to_string(&mut buf)?;
-                    self.notes[item_pos].body = buf.to_owned();
-                } else {
-                    self.notes[item_pos].title = title.replace("\n", "")
-                                                      .to_string()
-                }
-            } else {
-                self.notes[item_pos].title = title.replace("\n", "")
-                                                  .to_string()
-            }
-            // change title
-        }
-        self.notes[item_pos].status = status.unwrap_or(Status::Blank);
 
-        if !body.is_empty() || use_editor || use_stdin {
-            // change body
-            self.notes[item_pos].body = if use_stdin {
-                let mut buf = String::new();
-                stdin().read_to_string(&mut buf)?;
-                buf.to_owned()
-            } else if use_editor {
-                if istty(STDOUT_FILENO) && istty(STDIN_FILENO) {
-                    if encrypted && !yes {
-                        let message = format!("{0}\n\n{1}\n{2}\n\n{0}\n{3}\n",
-                                              "## [WARNING] ##",
-                                              "continuing will write the body of the decrypted \
-                                               note to a temporary",
-                                              "file, increasing the possibilty it could be \
-                                               recovered later.",
-                                              "Are you sure you want to continue?\n");
-                        if !get_yn_input(&message)? {
-                            return specific_fail_str!("ok bye ♥");
-                        }
-                    }
-                    let new_body = drop_to_editor(&self.notes[item_pos].body)?;
-                    if self.notes[item_pos].body != new_body {
-                        new_body
-                    } else {
-                        self.notes[item_pos].body.clone()
-                    }
-                } else {
-                    self.notes[item_pos].body.clone()
-                }
-            } else {
-                body[0].clone()
+        if let Some(t) = title {
+            if !t.is_empty() {
+                self.notes[item_pos].title = t.replace("\n", "").to_string();
             }
-        };
+        }
+
+        if let Some(s) = status {
+            self.notes[item_pos].status = *s;
+        }
+
+        if let Some(b) = body {
+             self.notes[item_pos].body = b.clone();
+        } else if use_stdin {
+             let mut buf = String::new();
+             stdin().read_to_string(&mut buf)?;
+             self.notes[item_pos].body = buf;
+        } else if use_editor {
+            if istty(STDOUT_FILENO) && istty(STDIN_FILENO) {
+                if encrypted && !yes {
+                    let message = format!("{0}\n\n{1}\n{2}\n\n{0}\n{3}\n",
+                                          "## [WARNING] ##",
+                                          "continuing will write the body of the decrypted \
+                                           note to a temporary",
+                                          "file, increasing the possibilty it could be \
+                                           recovered later.",
+                                          "Are you sure you want to continue?\n");
+                    if !get_yn_input(&message)? {
+                        return specific_fail_str!("ok bye ♥");
+                    }
+                }
+                let new_body = drop_to_editor(&self.notes[item_pos].body)?;
+                if self.notes[item_pos].body != new_body {
+                    self.notes[item_pos].body = new_body;
+                }
+            }
+        }
 
         // update last_touched
         self.notes[item_pos].last_touched = chrono::Local::now().format(DATEFMT).to_string();
@@ -392,48 +411,54 @@ impl Profile {
                            .filter(|n| n.status == Status::Urgent)
                            .count();
         let tty = istty(STDOUT_FILENO);
-        let min = match self.notes
-                            .iter()
-                            .min_by_key(|n| match parse_last_touched(&*n.last_touched) {
-                                Ok(o) => o,
-                                Err(_) => chrono::Local::now(),
-                            }) {
-            Some(n) => localize_last_touched_string(&*n.last_touched)?,
-            None => return specific_fail_str!("last_touched is not properly formated"),
-        };
-        let max = match self.notes
-                            .iter()
-                            .max_by_key(|n| match parse_last_touched(&*n.last_touched) {
-                                Ok(o) => o,
-                                Err(_) => chrono::Local::now(),
-                            }) {
-            Some(n) => localize_last_touched_string(&*n.last_touched)?,
-            None => return specific_fail_str!("last_touched is not properly formated"),
-        };
-        pretty_line("name: ", &format!("{}\n", name), tty)?;
-        pretty_line("encrypted: ", &format!("{}\n", self.encrypted), tty)?;
-        pretty_line("notes: ", &format!("{}\n", self.notes.len()), tty)?;
-        pretty_line("statuses: ",
-                         &format!("none: {}, started: {}, urgent: {}\n",
-                                  no_s,
-                                  started_s,
-                                  urgent_s),
-                         tty)?;
-        pretty_line("note ages: ",
-                         &format!("oldest: {}, newest: {}\n", min, max),
-                         tty)?;
+        if self.notes.is_empty() {
+             pretty_line("name: ", &format!("{}\n", name), tty)?;
+             pretty_line("encrypted: ", &format!("{}\n", self.encrypted), tty)?;
+             pretty_line("notes: ", "0\n", tty)?;
+        } else {
+            let min = match self.notes
+                                .iter()
+                                .min_by_key(|n| match parse_last_touched(&*n.last_touched) {
+                                    Ok(o) => o,
+                                    Err(_) => chrono::Local::now(),
+                                }) {
+                Some(n) => localize_last_touched_string(&*n.last_touched)?,
+                None => return specific_fail_str!("last_touched is not properly formated"),
+            };
+            let max = match self.notes
+                                .iter()
+                                .max_by_key(|n| match parse_last_touched(&*n.last_touched) {
+                                    Ok(o) => o,
+                                    Err(_) => chrono::Local::now(),
+                                }) {
+                Some(n) => localize_last_touched_string(&*n.last_touched)?,
+                None => return specific_fail_str!("last_touched is not properly formated"),
+            };
+            pretty_line("name: ", &format!("{}\n", name), tty)?;
+            pretty_line("encrypted: ", &format!("{}\n", self.encrypted), tty)?;
+            pretty_line("notes: ", &format!("{}\n", self.notes.len()), tty)?;
+            pretty_line("statuses: ",
+                             &format!("none: {}, started: {}, urgent: {}\n",
+                                      no_s,
+                                      started_s,
+                                      urgent_s),
+                             tty)?;
+            pretty_line("note ages: ",
+                             &format!("oldest: {}, newest: {}\n", min, max),
+                             tty)?;
+        }
         Ok(())
     }
 
     /// print a full item
-    pub fn view_note(&mut self, id: usize, json: bool, condensed: bool) -> Result<()> {
+    pub fn view_note(&mut self, id: usize, yaml: bool, condensed: bool) -> Result<()> {
         let id = id;
         let note_pos = match self.notes.iter().position(|n| n.id == id) {
             Some(i) => i,
             None => return specific_fail!(format!("note {} doesn't exist", id)),
         };
-        if json {
-            println!("{}", serde_json::to_string(&self.notes[note_pos].clone()).unwrap());
+        if yaml {
+            println!("{}", serde_yaml::to_string(&self.notes[note_pos].clone()).unwrap());
         } else {
             let tty = istty(STDOUT_FILENO);
 
@@ -488,12 +513,12 @@ impl Profile {
     /// print all notes in the profile
     pub fn list_notes(&mut self,
                       limit: usize,
-                      flags: BoolFlags,
+                      flags: ProfileFlags,
                       status: Option<Status>)
                       -> Result<()> {
         if !self.notes.is_empty() {
             sorted_print(&mut self.notes.clone(), limit, flags, status)?;
-        } else if flags.json {
+        } else if flags.yaml {
             println!("[]");
         } else {
             println!("this profile is empty");
@@ -505,7 +530,7 @@ impl Profile {
     pub fn search_notes(&mut self,
                         pattern: &str,
                         limit: usize,
-                        flags: BoolFlags,
+                        flags: ProfileFlags,
                         status: Option<Status>)
                         -> Result<()> {
         let notes: Vec<Item> = if flags.regex {
@@ -535,7 +560,7 @@ impl Profile {
         };
         if !notes.is_empty() {
             sorted_print(&mut notes.clone(), limit, flags, status)?;
-        } else if flags.json {
+        } else if flags.yaml {
             println!("[]");
         } else {
             println!("nothing found");

@@ -1,372 +1,232 @@
-#![cfg_attr(feature = "unstable", allow(unstable_features))]
-#![cfg_attr(feature = "unstable", feature(plugin))]
-#![cfg_attr(feature = "unstable", plugin(clippy))]
-//  _   _
-// | |_| |__   ___  ___ __ _
-// | __| '_ \ / _ \/ __/ _` |
-// | |_| | | |  __/ (_| (_| |
-//  \__|_| |_|\___|\___\__,_|
-//
-// licensed under the MIT license <http://opensource.org/licenses/MIT>
-//
-// lib.rs
-//   main theca struct defintions and command parsing functions.
-
-//! Definitions of Item and Profile and their implementations
-
-extern crate core;
-extern crate libc;
-extern crate time;
-extern crate docopt;
-extern crate rustc_serialize;
-extern crate regex;
-extern crate crypto;
-extern crate term;
-extern crate rand;
-extern crate tempdir;
-extern crate serde;
-
-// std lib imports
-use std::env;
-use std::default::Default;
-
-// theca imports
-use utils::{find_profile_folder, get_password, profiles_in_folder, extract_status};
-use errors::Result;
-
-pub use self::libc::{STDIN_FILENO, STDOUT_FILENO, STDERR_FILENO};
-pub use profile::Profile;
-use serde::{Deserialize};
-
-#[macro_use]pub mod errors;
-pub mod profile;
+pub mod args;
+pub mod crypt;
+pub mod errors;
 pub mod item;
 pub mod lineformat;
+pub mod profile;
 pub mod utils;
-pub mod crypt;
 
-/// Current version of theca
-pub fn version() -> String {
-    format!("theca {}", option_env!("THECA_BUILD_VER").unwrap_or(""))
-}
+use clap::Parser;
+use args::{Cli, Commands};
+use profile::{Profile, ProfileFlags};
+use errors::Result;
 
-/// theca docopt argument struct
-#[derive(Debug, Deserialize, Clone)]
-pub struct Args {
-    pub cmd_add: bool,
-    pub cmd_clear: bool,
-    pub cmd_del: bool,
-    pub cmd_decrypt_profile: bool,
-    pub cmd_edit: bool,
-    pub cmd_encrypt_profile: bool,
-    pub cmd_import: bool,
-    pub cmd_info: bool,
-    pub cmd_list_profiles: bool,
-    pub cmd_new_profile: bool,
-    pub cmd_search: bool,
-    pub cmd_transfer: bool,
-    pub cmd__: bool,
-    pub arg_id: Vec<usize>,
-    pub arg_name: Vec<String>,
-    pub arg_pattern: String,
-    pub arg_title: String,
-    pub flag_body: Vec<String>,
-    pub flag_condensed: bool,
-    pub flag_datesort: bool,
-    pub flag_editor: bool,
-    pub flag_encrypted: bool,
-    pub flag_json: bool,
-    pub flag_key: String,
-    pub flag_limit: usize,
-    pub flag_new_key: String,
-    pub flag_none: bool,
-    pub flag_profile: String,
-    pub flag_profile_folder: String,
-    pub flag_regex: bool,
-    pub flag_reverse: bool,
-    pub flag_search_body: bool,
-    pub flag_started: bool,
-    pub flag_urgent: bool,
-    pub flag_version: bool,
-    pub flag_yes: bool,
-}
+pub fn r#run() -> Result<()> {
+    let cli = Cli::parse();
 
-pub struct BoolFlags {
-    pub condensed: bool,
-    pub datesort: bool,
-    pub editor: bool,
-    pub encrypted: bool,
-    pub json: bool,
-    pub regex: bool,
-    pub reverse: bool,
-    pub search_body: bool,
-    pub yes: bool,
-}
+    // Determine the profile to load.
+    // If command is NewProfile, we still load "default" or whatever --profile says?
+    // Actually, Profile::new handles loading or creating.
+    // If NewProfile command is used, we might be creating a NEW one, but Profile::new is used to load the *current* context.
+    // However, for NewProfile, we don't necessarily need a current context unless we are copying settings?
+    // But theca architecture seems to be centered around "Load a profile, then do something".
+    // Except NewProfile creates a new one.
+    
+    // Logic:
+    // If NewProfile, we don't strictly need to load `cli.profile`.
+    // But let's follow standard flow: Load `cli.profile` (which defaults to "default"), then execute command.
+    // UNLESS `cli.profile` doesn't exist AND we are running `new-profile`.
+    // But `new-profile` creates *another* profile.
+    
+    // We will load the profile specified by `--profile` (or default).
+    // If it doesn't exist, `Profile::new` will prompt to create it (unless `new_profile` arg to Profile::new is true).
+    
+    // Wait, `cli.command` might be `NewProfile`.
+    let is_new_profile_cmd = matches!(cli.command, Some(Commands::NewProfile { .. }));
+    
+    // We only want `Profile::new` to enter "create new" mode if we are actually creating the profile specified in `cli.profile`.
+    // `theca new-profile foo` -> Creates "foo". `cli.profile` is "default".
+    // We should NOT create "default" if it doesn't exist, just to create "foo".
+    // But `Profile::new` is designed to load `cli.profile`.
+    
+    // Let's implement lazy loading or just load.
+    // If we are running `NewProfile`, we can skip loading `cli.profile`?
+    // But `run` structure expects a profile.
+    
+    // Let's just load it. If "default" doesn't exist, `Profile::new` asks to create it.
+    // User might say no. Then we fail?
+    // FIXME: This is a slight UX regression if user just wants to run `theca new-profile` on fresh install.
+    // They will be asked to create "default" first.
+    // We can pass `false` for `new_profile` to `Profile::new`?
+    // `Profile::new` signature: `new_profile: bool`.
+    // If true, it calls `from_scratch`.
+    // If false, `from_existing`.
+    
+    // If we are running `NewProfile` command, we probably shouldn't trigger creation of `cli.profile`.
+    // But `lib.rs` logic I wrote before passed `matches!(cli.command, NewProfile)` as `new_profile` arg to `Profile::new`.
+    // This means if I run `theca new-profile foo`, `Profile::new("default", ..., true)` is called.
+    // `from_scratch("default")` is called.
+    // This creates "default" (or asks).
+    // Then later we create "foo".
+    // Use `false` for `new_profile` when running `NewProfile` command, to avoid forcing creation of the *current* profile?
+    
+    let (mut profile, fingerprint) = if !is_new_profile_cmd {
+         Profile::new(
+            &cli.profile,
+            &cli.profile_folder,
+            cli.key.as_ref(), 
+            false, // Don't force create unless... wait.
+            // If `cli.profile` doesn't exist, `from_existing` fails.
+            // `from_scratch` creates.
+            // When does user want to create `cli.profile`?
+            // When they run `theca --profile foo` and it doesn't exist?
+            // Original logic used `args.cmd_new_profile`. 
+            // `args.cmd_new_profile` was true if `new-profile` command was used.
+            // So original logic: `theca new-profile foo` -> `Profile::new(..., true)`.
+            // `Profile::new` used `args.flag_profile`?
+            // `args.flag_profile` is global.
+            // `new-profile` sets `args.cmd_new_profile`.
+            // So `theca new-profile foo` -> `Profile::new("default", ..., true)`.
+            // `from_scratch` creates "default".
+            // Then `parse_cmds` handled `new_profile`.
+            // `check cmd_new_profile`.
+            // `args.arg_name` used.
+            // `println!("creating profile '{}'", args.arg_name[0])`.
+            // `save_to_file` used `cmd_new_profile` to save to `arg_name`.
+            
+            // So original logic created/loaded "default", but then Saved As "foo".
+            // This effectively "cloned" default to foo? Or created empty?
+            // `Profile::new` returns empty profile if `from_scratch`.
+            
+            // So `theca new-profile foo`:
+            // 1. `Profile::new(..., true)` -> `from_scratch` -> returns empty profile named "default" (in struct, but assumes "default" path).
+            // 2. `parse_cmds` -> `save_to_file` -> switches name to "foo".
+            // So it creates a fresh profile "foo".
+            
+            // It did NOT create "default" on disk if `from_scratch` just returned struct?
+            // `from_scratch` calls `create_dir` (folder) but doesn't write profile file.
+            // It returns `Profile` struct.
+            // `save_to_file` writes it.
+            
+            // So my previous `lib.rs` logic was close.
+            cli.encrypted,
+            cli.yes,
+        )?
+    } else {
+        // Special case for NewProfile: We want an empty profile to start with.
+        // We don't want to load from disk.
+        Profile::new(
+            &cli.profile, // Name doesn't matter much here if we ignore it later
+            &cli.profile_folder,
+            cli.key.as_ref(),
+            true, // from_scratch
+            cli.encrypted,
+            cli.yes
+        )?
+    };
 
-impl BoolFlags {
-    pub fn from_args(args: &Args) -> BoolFlags {
-        BoolFlags {
-            condensed: args.flag_condensed,
-            datesort: args.flag_datesort,
-            editor: args.flag_editor,
-            encrypted: args.flag_encrypted,
-            json: args.flag_json,
-            regex: args.flag_regex,
-            reverse: args.flag_reverse,
-            search_body: args.flag_search_body,
-            yes: args.flag_yes,
+    match &cli.command {
+        Some(Commands::Add { title, body, status, editor }) => {
+            profile.add_note(title, 
+                             &[body.clone()], 
+                             utils::extract_status(status.clone())?, 
+                             false, 
+                             *editor,
+                             true)?;
+             profile.save_to_file(&cli.profile, &cli.profile_folder, cli.key.as_ref(), false, cli.yes, &fingerprint)?;
+
         }
-    }
-}
+        Some(Commands::Edit { id, title, body, status, editor }) => {
+             let flags = ProfileFlags {
+                editor: *editor,
+                encrypted: cli.encrypted,
+                yes: cli.yes,
+                ..Default::default()
+            };
+            // Map Some(String) -> Option<Status>
+            let st = if let Some(s) = status {
+                utils::extract_status(Some(s.clone()))?
+            } else {
+                None
+            };
+            
+            profile.edit_note(*id, title, body, &st, false, flags)?;
+            profile.save_to_file(&cli.profile, &cli.profile_folder, cli.key.as_ref(), false, cli.yes, &fingerprint)?;
 
-impl Default for BoolFlags {
-    fn default() -> BoolFlags {
-        BoolFlags {
-            condensed: false,
-            datesort: false,
-            editor: false,
-            encrypted: false,
-            json: false,
-            regex: false,
-            reverse: false,
-            search_body: false,
-            yes: false,
         }
-    }
-}
-
-pub fn setup_args(args: &mut Args) -> Result<()> {
-    if let Ok(val) = env::var("THECA_DEFAULT_PROFILE") {
-        if args.flag_profile.is_empty() && !val.is_empty() {
-            args.flag_profile = val;
+        Some(Commands::Del { id }) => {
+            profile.delete_note(id);
+            profile.save_to_file(&cli.profile, &cli.profile_folder, cli.key.as_ref(), false, cli.yes, &fingerprint)?;
         }
-    }
-
-    if let Ok(val) = env::var("THECA_PROFILE_FOLDER") {
-        if args.flag_profile_folder.is_empty() && !val.is_empty() {
-            args.flag_profile_folder = val;
+        Some(Commands::Transfer { id, target_profile }) => {
+             // transfer_note saves both?
+             profile.transfer_note(*id, target_profile, &cli.profile, &cli.profile_folder, cli.key.as_ref(), cli.encrypted, cli.yes)?;
+             // transfer_note in profile.rs removes from self and saves target.
+             // We need to save self.
+             profile.save_to_file(&cli.profile, &cli.profile_folder, cli.key.as_ref(), false, cli.yes, &fingerprint)?;
         }
-    }
-
-    // if key is provided but --encrypted not set, it prob should be
-    if !args.flag_key.is_empty() && !args.flag_encrypted {
-        args.flag_encrypted = true;
-    }
-
-    // if profile is encrypted try to set the key
-    if args.flag_encrypted && args.flag_key.is_empty() {
-        args.flag_key = get_password()?;
-    }
-
-    // if no profile is provided via cmd line or env set it to default
-    if args.flag_profile.is_empty() {
-        args.flag_profile = "default".to_string();
-    }
-
-
-    Ok(())
-}
-
-pub fn parse_cmds(profile: &mut Profile, args: &mut Args, profile_fingerprint: &u64) -> Result<()> {
-    let status = extract_status(args.flag_none, args.flag_started, args.flag_urgent)?;
-    let flags = BoolFlags::from_args(args);
-
-    if [args.cmd_add,
-        args.cmd_edit,
-        args.cmd_encrypt_profile,
-        args.cmd_del,
-        args.cmd_decrypt_profile,
-        args.cmd_transfer,
-        args.cmd_clear,
-        args.cmd_new_profile]
-           .iter()
-           .any(|c| c == &true) {
-        // add
-        if args.cmd_add {
-            profile.add_note(&args.arg_title,
-                                  &args.flag_body,
-                                  status,
-                                  args.cmd__,
-                                  args.flag_editor,
-                                  true)?;
+        Some(Commands::NewProfile { name }) => {
+             // profile is empty from `from_scratch`
+             // Save it as `name`.
+             profile.save_to_file(name, &cli.profile_folder, cli.key.as_ref(), true, cli.yes, &0)?;
+             println!("created profile '{}'", name);
         }
-
-        // edit
-        if args.cmd_edit {
-            profile.edit_note(args.arg_id[0],
-                                   &args.arg_title,
-                                   &args.flag_body,
-                                   status,
-                                   args.cmd__,
-                                   flags)?;
+        Some(Commands::EncryptProfile { new_key }) => {
+             if !profile.encrypted {
+                  let key = match new_key {
+                      Some(k) => k.clone(),
+                      None => utils::get_password()?,
+                  };
+                  let mut new_profile = profile.clone();
+                  new_profile.encrypted = true;
+                  new_profile.save_to_file(&cli.profile, &cli.profile_folder, Some(&key), false, cli.yes, &0)?;
+                  println!("encrypting '{}'", cli.profile);
+             } else {
+                 println!("Profile '{}' is already encrypted.", cli.profile);
+             }
         }
-
-        // delete
-        if args.cmd_del {
-            profile.delete_note(&args.arg_id);
+        Some(Commands::DecryptProfile) => {
+             if profile.encrypted {
+                  let mut new_profile = profile.clone();
+                  new_profile.encrypted = false;
+                  new_profile.save_to_file(&cli.profile, &cli.profile_folder, None, false, cli.yes, &0)?;
+                  println!("decrypting '{}'", cli.profile);
+             } else {
+                 println!("Profile '{}' is not encrypted.", cli.profile);
+             }
         }
-
-        // transfer
-        if args.cmd_transfer {
-            // transfer a note
-            profile.transfer_note(args)?;
+        Some(Commands::Search { pattern, search_body, regex, limit }) => {
+             let flags = ProfileFlags {
+                search_body: *search_body,
+                regex: *regex,
+                condensed: false, 
+                yaml: false, 
+                ..Default::default()
+            };
+            profile.search_notes(pattern, limit.unwrap_or(0), flags, None)?;
         }
-
-        // clear
-        if args.cmd_clear {
-            profile.clear(args.flag_yes)?;
+        Some(Commands::ListProfiles) => {
+            let folder = utils::find_profile_folder(&cli.profile_folder)?;
+            utils::profiles_in_folder(&folder)?;
         }
-
-        // decrypt profile
-        // FIXME: should test how this interacts with save_to_file when the profile has
-        //        changed during execution
-        if args.cmd_decrypt_profile {
-            profile.encrypted = false; // is it that easy? i think it is
-            println!("decrypting '{}'", args.flag_profile);
+        Some(Commands::Info) => {
+            profile.stats(&cli.profile)?;
         }
-
-        // encrypt profile
-        // FIXME: should test how this interacts with save_to_file when the profile has
-        //        changed during execution
-        if args.cmd_encrypt_profile {
-            // get the new key
-            if args.flag_new_key.is_empty() {
-                args.flag_new_key = get_password()?;
-            }
-
-            // set args.key and args.encrypted
-            args.flag_encrypted = true;
-            args.flag_key = args.flag_new_key.clone();
-
-            // set profile to encrypted
-            profile.encrypted = true;
-            println!("encrypting '{}'", args.flag_profile);
+        Some(Commands::Clear) => {
+            profile.clear(cli.yes)?;
+            profile.save_to_file(&cli.profile, &cli.profile_folder, cli.key.as_ref(), false, cli.yes, &fingerprint)?;
         }
-
-        // new profile
-        if args.cmd_new_profile {
-            if args.cmd_new_profile && args.arg_name.is_empty() {
-                args.arg_name.push("default".to_string())
-            }
-            println!("creating profile '{}'", args.arg_name[0]);
+        Some(Commands::List { limit, datesort, reverse, yaml, condensed, status }) => {
+             let flags = ProfileFlags {
+                yaml: *yaml,
+                condensed: *condensed,
+                datesort: *datesort,
+                reverse: *reverse,
+                ..Default::default()
+             };
+             let st = if let Some(s) = status {
+                utils::extract_status(Some(s.clone()))?
+             } else {
+                None
+             };
+             profile.list_notes(limit.unwrap_or(0), flags, st)?;
         }
-
-        profile.save_to_file(args, profile_fingerprint)?;
-    } else if !args.arg_id.is_empty() {
-        profile.view_note(args.arg_id[0], args.flag_json, args.flag_condensed)?;
-    } else if args.cmd_search {
-        profile.search_notes(&args.arg_pattern, args.flag_limit, flags, status)?;
-    } else if args.cmd_info {
-        profile.stats(&args.flag_profile)?;
-    } else if args.cmd_import {
-        // reverse(?) transfer a note
-        let mut from_args = args.clone();
-        from_args.cmd_transfer = args.cmd_import;
-        from_args.cmd_import = false;
-        from_args.flag_profile = args.arg_name[0].clone();
-        from_args.arg_name[0] = args.flag_profile.clone();
-
-        let (mut from_profile, from_fingerprint) = Profile::new(
-                &from_args.flag_profile,
-                &from_args.flag_profile_folder,
-                &from_args.flag_key,
-                from_args.cmd_new_profile,
-                from_args.flag_encrypted,
-                from_args.flag_yes
-            )?;
-
-        parse_cmds(&mut from_profile, &mut from_args, &from_fingerprint)?;
-    } else if args.cmd_list_profiles {
-        let profile_path = find_profile_folder(&args.flag_profile_folder)?;
-        profiles_in_folder(&profile_path)?;
-    } else if args.arg_id.is_empty() {
-        profile.list_notes(args.flag_limit, flags, status)?;
+        None => {
+            // Default list
+            let flags = ProfileFlags::default(); // defaults to false for json/condensed etc
+            profile.list_notes(0, flags, None)?;
+        }
     }
 
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-#![allow(non_snake_case)]
-    use item::{Status, Item};
-    use super::lineformat::LineFormat;
-
-    fn write_item_test_case(item: Item, search: bool) -> String {
-        let mut bytes: Vec<u8> = vec![];
-        let line_format = LineFormat::new(&[item.clone()], false, false).unwrap();
-        item.write(&mut bytes, &line_format, search).expect("item.write failed");
-        String::from_utf8_lossy(&bytes).into_owned()
-    }
-
-    #[test]
-    fn test_write_item__no_search_non_empty_body() {
-        //Date without DST
-        let item = Item {
-            id: 0,
-            title: "This is a title".into(),
-            status: Status::Blank,
-            body: "This is the body".into(),
-            last_touched: "2016-01-08 15:31:14 -0800".into(),
-        };
-        assert_eq!(write_item_test_case(item, false),
-                   "0   This is a title (+)  2016-01-08 15:31:14\n");
-    }
-
-    #[test]
-    fn test_write_item__no_search_empty_body() {
-        // no search && empty body
-        //Date with DST
-        let item = Item {
-            id: 0,
-            title: "This is a title".into(),
-            status: Status::Blank,
-            body: "".into(),
-            last_touched: "2016-07-08 15:31:14 -0800".into(),
-        };
-        assert_eq!(write_item_test_case(item, false),
-                   "0   This is a title  2016-07-08 16:31:14\n");
-    }
-
-    #[test]
-    fn test_write_item__search_non_empty_body() {
-        let item = Item {
-            id: 0,
-            title: "This is a title".into(),
-            status: Status::Blank,
-            body: "This is the body\nit has multiple lines".into(),
-            last_touched: "2016-07-08 15:31:14 -0800".into(),
-        };
-        assert_eq!(write_item_test_case(item, true),
-                   "0   This is a title      2016-07-08 16:31:14\n\tThis is the body\n\tit has \
-                    multiple lines\n");
-    }
-
-    #[test]
-    fn test_write_item__search_empty_body() {
-        // search && empty body
-        let item = Item {
-            id: 0,
-            title: "This is a title".into(),
-            status: Status::Blank,
-            body: "".into(),
-            last_touched: "2016-07-08 15:31:14 -0800".into(),
-        };
-        assert_eq!(write_item_test_case(item, true),
-                   "0   This is a title  2016-07-08 16:31:14\n");
-    }
-
-    #[test]
-    fn test_write_item__non_zero_status_width() {
-        let item = Item {
-            id: 0,
-            title: "This is a title".into(),
-            status: Status::Started,
-            body: "This is the body".into(),
-            last_touched: "2016-07-08 15:31:14 -0800".into(),
-        };
-        assert_eq!(write_item_test_case(item, false),
-                   "0   This is a title (+)  Started  2016-07-08 16:31:14\n");
-
-    }
 }

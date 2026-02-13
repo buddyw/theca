@@ -1,87 +1,101 @@
-//  _   _
-// | |_| |__   ___  ___ __ _
-// | __| '_ \ / _ \/ __/ _` |
-// | |_| | | |  __/ (_| (_| |
-//  \__|_| |_|\___|\___\__,_|
-//
-// licensed under the MIT license <http://opensource.org/licenses/MIT>
-//
-// crypt.rs
-//   defintions of the AES encryption, decryption, and PBKDF2 key derivation
-//   functions required to read and write encrypted profiles.
+use chacha20poly1305::aead::{Aead, AeadCore, KeyInit, OsRng};
+use chacha20poly1305::{XChaCha20Poly1305, XNonce};
+use argon2::{
+    password_hash::{
+        rand_core::RngCore,
+    },
+    Argon2
+};
+use std::error::Error;
+use std::fmt;
 
-use std::iter::repeat;
-use crypto::{symmetriccipher, buffer, aes, blockmodes};
-use crypto::buffer::{ReadBuffer, WriteBuffer, BufferResult};
-use crypto::pbkdf2::pbkdf2;
-use crypto::hmac::Hmac;
-use crypto::sha2::Sha256;
-use crypto::digest::Digest;
-use crypto::fortuna::Fortuna;
-use rand::{SeedableRng, Rng};
-
-// ALL the encryption functions thx rust-crypto ^_^
-pub fn encrypt(data: &[u8], key: &[u8]) -> Result<Vec<u8>, symmetriccipher::SymmetricCipherError> {
-    let mut iv = [0u8; 16];
-    let mut f: Fortuna = SeedableRng::from_seed(data);
-    f.fill_bytes(&mut iv);
-
-    let mut encryptor =
-        aes::cbc_encryptor(aes::KeySize::KeySize256, key, &iv, blockmodes::PkcsPadding);
-
-    let mut final_result = Vec::<u8>::new();
-    final_result.extend_from_slice(&iv);
-    let mut read_buffer = buffer::RefReadBuffer::new(data);
-    let mut buffer = [0; 4096];
-    let mut write_buffer = buffer::RefWriteBuffer::new(&mut buffer);
-
-    loop {
-        let result = encryptor.encrypt(&mut read_buffer, &mut write_buffer, true)?;
-
-        final_result.extend(write_buffer.take_read_buffer().take_remaining());
-
-        if let BufferResult::BufferUnderflow = result {
-            break;
-        }
-    }
-
-    Ok(final_result)
+#[derive(Debug)]
+pub enum CryptError {
+    Encryption,
+    Decryption,
+    KeyDerivation,
 }
 
-pub fn decrypt(encrypted_data: &[u8],
-               key: &[u8])
-               -> Result<Vec<u8>, symmetriccipher::SymmetricCipherError> {
-    let iv = &encrypted_data[0..16];
-
-    let mut decryptor =
-        aes::cbc_decryptor(aes::KeySize::KeySize256, key, iv, blockmodes::PkcsPadding);
-
-    let mut final_result = Vec::<u8>::new();
-    let mut read_buffer = buffer::RefReadBuffer::new(&encrypted_data[16..]);
-    let mut buffer = [0; 4096];
-    let mut write_buffer = buffer::RefWriteBuffer::new(&mut buffer);
-
-    loop {
-        let result = decryptor.decrypt(&mut read_buffer, &mut write_buffer, true)?;
-        final_result.extend(write_buffer.take_read_buffer().take_remaining());
-        if let BufferResult::BufferUnderflow = result {
-            break;
+impl fmt::Display for CryptError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            CryptError::Encryption => write!(f, "Encryption failed"),
+            CryptError::Decryption => write!(f, "Decryption failed"),
+            CryptError::KeyDerivation => write!(f, "Key derivation failed"),
         }
     }
-
-    Ok(final_result)
 }
 
-pub fn password_to_key(p: &str) -> Vec<u8> {
-    // yehh.... idk
-    let mut salt_sha = Sha256::new();
-    salt_sha.input(p.as_bytes());
-    let salt = salt_sha.result_str();
+impl Error for CryptError {}
 
-    let mut mac = Hmac::new(Sha256::new(), p.as_bytes());
-    let mut key: Vec<u8> = repeat(0).take(32).collect();
+/// Derives a 32-byte key from a password and salt using Argon2id.
+pub fn derive_key(password: &str, salt: &[u8]) -> Result<[u8; 32], CryptError> {
+    let mut key = [0u8; 32];
+    let argon2 = Argon2::default();
+    
+    // We need to output raw bytes for the key, but the `password_hash` crate 
+    // focuses on PHC string format. We can use `hash_password_custom` into output.
+    // However, simpler is often better. Let's use `argon2` simplified API 
+    // or just standard usage.
+    
+    // Actually, to get raw key bytes for encryption (not password verification),
+    // we should use a KDF mode or just hash it. 
+    // Argon2id is suitable.
+    
+    // Crates often change APIs. simpler `Argon2::default().hash_password` returns a `PasswordHash`.
+    // We can't easily extract raw bytes from `PasswordHash` for encryption key usage 
+    // (it's designed for storage).
+    
+    // Let's use `Argon2::hash_password_into`.
+    argon2.hash_password_into(
+        password.as_bytes(), 
+        salt, 
+        &mut key
+    ).map_err(|_| CryptError::KeyDerivation)?;
 
-    pbkdf2(&mut mac, salt.as_bytes(), 2056, key.as_mut_slice());
+    Ok(key)
+}
 
-    key
+/// Encrypts data using XChaCha20Poly1305.
+/// Returns a vector containing [Salt (16 bytes) | Nonce (24 bytes) | Ciphertext].
+pub fn encrypt(data: &[u8], password: &str) -> Result<Vec<u8>, Box<dyn Error>> {
+    let mut salt = [0u8; 16];
+    OsRng.fill_bytes(&mut salt);
+
+    let key_bytes = derive_key(password, &salt)?;
+    let key = chacha20poly1305::Key::from_slice(&key_bytes);
+    let cipher = XChaCha20Poly1305::new(key);
+
+    let nonce = XChaCha20Poly1305::generate_nonce(&mut OsRng); // 24-bytes; unique per message
+    
+    let ciphertext = cipher.encrypt(&nonce, data)
+        .map_err(|_| CryptError::Encryption)?;
+
+    let mut result = Vec::with_capacity(16 + 24 + ciphertext.len());
+    result.extend_from_slice(&salt);
+    result.extend_from_slice(&nonce);
+    result.extend_from_slice(&ciphertext);
+
+    Ok(result)
+}
+
+/// Decrypts data using XChaCha20Poly1305.
+/// Expects data format: [Salt (16 bytes) | Nonce (24 bytes) | Ciphertext].
+pub fn decrypt(encrypted_data: &[u8], password: &str) -> Result<Vec<u8>, Box<dyn Error>> {
+    if encrypted_data.len() < 16 + 24 {
+        return Err(Box::new(CryptError::Decryption));
+    }
+
+    let salt = &encrypted_data[0..16];
+    let nonce = XNonce::from_slice(&encrypted_data[16..40]);
+    let ciphertext = &encrypted_data[40..];
+
+    let key_bytes = derive_key(password, salt)?;
+    let key = chacha20poly1305::Key::from_slice(&key_bytes);
+    let cipher = XChaCha20Poly1305::new(key);
+
+    let plaintext = cipher.decrypt(nonce, ciphertext)
+        .map_err(|_| CryptError::Decryption)?;
+
+    Ok(plaintext)
 }
