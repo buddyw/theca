@@ -96,29 +96,43 @@ pub fn drop_to_editor(contents: &str) -> Result<String> {
 }
 
 pub fn get_password() -> Result<String> {
-    let mut stdout = stdout();
     print!("Key: ");
-    stdout.flush()?;
-    
-    // use rpassword or similar? Or just simple stdin if we don't include rpassword.
-    // Original used termios to disable echo.
-    // `crossterm` doesn't strictly handle password input, but `rpassword` crate is standard.
-    // Since I didn't add `rpassword` to Cargo.toml, I can try to use `crossterm` to hide cursor or similar, 
-    // BUT hiding echo is terminal specific.
-    // I added `crossterm`.
-    // Actually, `crossterm` does not have a "disable echo" feature easily exposed for input.
-    // I'll stick to simple input for now or use a hack. 
-    // Wait, the plan was to remove `term`. 
-    // I'll assume standard input for now. If I need password masking, I should have added `rpassword`.
-    // I'll add `rpassword` to Cargo.toml or just assume visible input for this pass?
-    // User asked for "update", insecure password entry is annoying.
-    // I'll modify `Cargo.toml` later to add `rpassword` if I can, or just use `rpassword` if standard lib had it (it doesn't).
-    // For now, I'll just read line.
-    
-    let stdin = stdin();
-    let mut key = String::new();
-    stdin.read_line(&mut key)?;
-    Ok(key.trim().to_string())
+    stdout().flush()?;
+    let password = rpassword::read_password().map_err(|e| Error {
+        kind: ErrorKind::Generic,
+        desc: format!("Failed to read password: {}", e),
+        detail: None,
+    })?;
+    Ok(password)
+}
+
+pub fn get_new_password() -> Result<String> {
+    loop {
+        print!("New Key: ");
+        stdout().flush()?;
+        let p1 = rpassword::read_password().map_err(|e| Error {
+            kind: ErrorKind::Generic,
+            desc: format!("Failed to read password: {}", e),
+            detail: None,
+        })?;
+        
+        print!("Confirm Key: ");
+        stdout().flush()?;
+        let p2 = rpassword::read_password().map_err(|e| Error {
+            kind: ErrorKind::Generic, // Reusing generic error
+            desc: format!("Failed to read password: {}", e),
+            detail: None,
+        })?;
+
+        if p1 == p2 {
+            if p1.is_empty() {
+                 println!("Key cannot be empty.");
+                 continue;
+            }
+            return Ok(p1);
+        }
+        println!("Keys do not match. Please try again.");
+    }
 }
 
 pub fn get_yn_input(message: &str) -> Result<bool> {

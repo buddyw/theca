@@ -158,14 +158,23 @@ pub fn r#run() -> Result<()> {
         Some(Commands::NewProfile { name }) => {
              // profile is empty from `from_scratch`
              // Save it as `name`.
-             profile.save_to_file(name, &cli.profile_folder, cli.key.as_ref(), true, cli.yes, &0)?;
+             let key = if cli.encrypted {
+                 if let Some(k) = &cli.key {
+                     Some(k.clone())
+                 } else {
+                     Some(utils::get_new_password()?)
+                 }
+             } else {
+                 None
+             };
+             profile.save_to_file(name, &cli.profile_folder, key.as_ref(), true, cli.yes, &0)?;
              println!("created profile '{}'", name);
         }
         Some(Commands::EncryptProfile { new_key }) => {
              if !profile.encrypted {
                   let key = match new_key {
                       Some(k) => k.clone(),
-                      None => utils::get_password()?,
+                      None => utils::get_new_password()?,
                   };
                   let mut new_profile = profile.clone();
                   new_profile.encrypted = true;
