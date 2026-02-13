@@ -46,9 +46,10 @@ pub fn extract_status(status_str: Option<String>) -> Result<Option<Status>> {
     match status_str.as_deref() {
         Some("started") | Some("Started") => Ok(Some(Status::Started)),
         Some("urgent") | Some("Urgent") => Ok(Some(Status::Urgent)),
+        Some("done") | Some("Done") => Ok(Some(Status::Urgent)),
         Some("blank") | Some("Blank") | Some("none") => Ok(Some(Status::Blank)),
         None => Ok(None),
-        Some(_) => specific_fail_str!("Invalid status"),
+        Some(_) => specific_fail_str!("Invalid status (started,urgent,done, or none)"),
     }
 }
 
@@ -346,6 +347,18 @@ pub fn path_to_profile_name(profile_path: &PathBuf) -> Result<String> {
 pub fn profiles_in_folder(folder: &Path) -> Result<()> {
     if folder.is_dir() {
         println!("# profiles in {}", folder.display());
+        
+        // Check for special 'default' profile in root
+        let root_profile = folder.join("profile.yaml");
+        let is_root_prof = validate_profile_from_path(&root_profile);
+        if is_root_prof.0 {
+            let mut msg = "default".to_string();
+            if is_root_prof.1 {
+                msg = format!("{} [encrypted]", msg);
+            }
+            println!("    {}", msg);
+        }
+
         for entry in read_dir(folder)? {
             let entry = entry?;
             let path = entry.path();

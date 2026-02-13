@@ -90,11 +90,15 @@ impl Profile {
                              encrypted: bool)
                              -> Result<(Profile, u64)> {
         // set profile folder
-        let mut profile_dir = find_profile_folder(profile_folder)?;
-        profile_dir.push(profile_name);
+        let profile_base = find_profile_folder(profile_folder)?;
         
-        // set profile path to profile.yaml inside the folder
-        let profile_path = profile_dir.join("profile.yaml");
+        let (profile_dir, profile_path) = if profile_name == "default" {
+            (profile_base.clone(), profile_base.join("profile.yaml"))
+        } else {
+            let dir = profile_base.join(profile_name);
+            let path = dir.join("profile.yaml");
+            (dir, path)
+        };
 
         // attempt to read profile
         if profile_path.is_file() {
@@ -138,8 +142,8 @@ impl Profile {
             };
             let fingerprint = profile_fingerprint(&profile_path)?;
             Ok((decoded, fingerprint))
-        } else if profile_dir.exists() && !profile_path.exists() {
-             // Directory exists but no profile.yaml?
+        } else if profile_dir.exists() && profile_name != "default" && !profile_path.exists() {
+             // Directory exists but no profile.yaml? (only for named profiles)
              specific_fail!(format!("Profile directory {} exists but contains no profile.yaml.", profile_dir.display()))
         } else {
              // Fallback: Check for legacy .yaml in base folder?
@@ -253,15 +257,27 @@ impl Profile {
                         yes: bool,
                         fingerprint: &u64) -> Result<()> {
         
-        let mut profile_dir = find_profile_folder(profile_folder)?;
-        profile_dir.push(profile_name);
+        // Enforce collision rules for named profiles
+        if profile_name != "default" {
+            if profile_name == "profile.yaml" || profile_name.ends_with(".md") {
+                return specific_fail!(format!("Invalid profile name '{}'. Profile names cannot be 'profile.yaml' or end in '.md'.", profile_name));
+            }
+        }
+
+        let profile_base = find_profile_folder(profile_folder)?;
         
-        // Create directory if it doesn't exist
-        if !profile_dir.exists() {
+        let (profile_dir, profile_path) = if profile_name == "default" {
+            (profile_base.clone(), profile_base.join("profile.yaml"))
+        } else {
+            let dir = profile_base.join(profile_name);
+            let path = dir.join("profile.yaml");
+            (dir, path)
+        };
+        
+        // Create directory if it doesn't exist (only for named profiles)
+        if profile_name != "default" && !profile_dir.exists() {
              std::fs::create_dir_all(&profile_dir)?;
         }
-        
-        let profile_path = profile_dir.join("profile.yaml");
 
         if new_profile && profile_path.exists() && !yes {
             let message = format!("profile {} already exists would you like to overwrite it?\n",
@@ -571,7 +587,7 @@ impl Profile {
                                  tty)?;
                 if self.notes[note_pos].status != Status::Blank {
                     pretty_line("status\n------\n",
-                                     &format!("{:?}\n\n", self.notes[note_pos].status),
+                                     &format!("{}\n\n", self.notes[note_pos].status),
                                      tty)?;
                 }
                 pretty_line("last touched\n------------\n",
@@ -660,8 +676,15 @@ impl Profile {
             return specific_fail_str!("synchronization is only supported for plaintext profiles");
         }
 
-        let mut profile_dir = find_profile_folder(profile_folder)?;
-        profile_dir.push(profile_name);
+        let profile_base = find_profile_folder(profile_folder)?;
+        
+        let (profile_dir, _profile_path) = if profile_name == "default" {
+            (profile_base.clone(), profile_base.join("profile.yaml"))
+        } else {
+            let dir = profile_base.join(profile_name);
+            let path = dir.join("profile.yaml");
+            (dir, path)
+        };
 
         if !profile_dir.exists() {
             return specific_fail!(format!("profile directory {} does not exist", profile_dir.display()));
@@ -669,11 +692,17 @@ impl Profile {
 
         let mut new_notes_raw: Vec<(String, String)> = vec![];
         let mut seen_ids = std::collections::HashSet::new();
-        let mut updated_notes = vec![];
-
+        // updated_notes was unused in previous version, removing it
+        
         let entries = std::fs::read_dir(&profile_dir)?;
         for entry in entries.flatten() {
             let path = entry.path();
+            
+            // Skip directories (only matters for default profile sync, but safe everywhere)
+            if path.is_dir() {
+                continue;
+            }
+
             if path.extension().and_then(|e| e.to_str()) == Some("md") {
                 let filename = path.file_name().and_then(|n| n.to_str()).unwrap_or("").to_string();
                 let mut content = String::new();
@@ -730,7 +759,6 @@ impl Profile {
                                 if changed {
                                     note.last_touched = chrono::Local::now().format(DATEFMT).to_string();
                                 }
-                                updated_notes.push(note.clone());
                             }
                             continue;
                         }

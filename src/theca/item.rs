@@ -49,7 +49,7 @@ impl Item {
         if line_format.status_width != 0 {
             write!(output,
                         "{}",
-                        format_field(&format!("{:?}", self.status),
+                        format_field(&format!("{}", self.status),
                                      line_format.status_width,
                                      false))?;
             write!(output, "{}", column_seperator)?;
@@ -73,6 +73,7 @@ pub enum Status {
     Blank,
     Started,
     Urgent,
+    Done,
 }
 
 impl fmt::Display for Status {
@@ -83,6 +84,7 @@ impl fmt::Display for Status {
                    Status::Blank => "",
                    Status::Started => "Started",
                    Status::Urgent => "Urgent",
+                   Status::Done => "Done",
                })
     }
 }
