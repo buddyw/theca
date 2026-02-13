@@ -1,6 +1,7 @@
 // std lib imports
 use std::io::{stdin, Read, Write};
 use std::fs::{File, create_dir};
+use std::path::Path;
 // use std::path::{Path, PathBuf};
 
 use serde::{Serialize, Deserialize};
@@ -64,17 +65,17 @@ impl Default for ProfileFlags {
 
 impl Profile {
     fn from_scratch(profile_folder: &Option<String>, encrypted: bool, yes: bool) -> Result<(Profile, u64)> {
-        let profile_path = find_profile_folder(profile_folder)?;
+        let profile_base_path = find_profile_folder(profile_folder)?;
         // if the folder doesn't exist, make it yo!
-        if !profile_path.exists() {
+        if !profile_base_path.exists() {
             if !yes {
                 let message = format!("{} doesn't exist, would you like to create it?\n",
-                                      profile_path.display());
+                                      profile_base_path.display());
                 if !get_yn_input(&message)? {
                     return specific_fail_str!("ok bye ♥");
                 }
             }
-            create_dir(&profile_path)?;
+            create_dir(&profile_base_path)?;
         }
         Ok((Profile {
             encrypted: encrypted,
@@ -89,10 +90,11 @@ impl Profile {
                              encrypted: bool)
                              -> Result<(Profile, u64)> {
         // set profile folder
-        let mut profile_path = find_profile_folder(profile_folder)?;
-
-        // set profile name
-        profile_path.push(&(profile_name.to_string() + ".yaml"));
+        let mut profile_dir = find_profile_folder(profile_folder)?;
+        profile_dir.push(profile_name);
+        
+        // set profile path to profile.yaml inside the folder
+        let profile_path = profile_dir.join("profile.yaml");
 
         // attempt to read profile
         if profile_path.is_file() {
@@ -131,21 +133,27 @@ impl Profile {
             let decoded: Profile = match serde_yaml::from_str(&contents) {
                 Ok(s) => s,
                 Err(e) => {
-                     // Fallback check for JSON for migration? (User said breaking changes ok, but helpful to know)
-                     // For now strictly YAML as requested.
                     return specific_fail!(format!("invalid YAML in {}: {}", profile_path.display(), e))
                 }
             };
             let fingerprint = profile_fingerprint(&profile_path)?;
             Ok((decoded, fingerprint))
-        } else if profile_path.exists() {
-            specific_fail!(format!("{} is not a file.", profile_path.display()))
+        } else if profile_dir.exists() && !profile_path.exists() {
+             // Directory exists but no profile.yaml?
+             specific_fail!(format!("Profile directory {} exists but contains no profile.yaml.", profile_dir.display()))
         } else {
-            // Check if json exists to warn user?
-             let mut json_path = profile_path.clone();
-             json_path.set_extension("json");
-             if json_path.exists() {
-                 return specific_fail!(format!("Found legacy JSON profile at {}. Please migrate or rename.", json_path.display()));
+             // Fallback: Check for legacy .yaml in base folder?
+             // User requested specific change "instead of creating <profile_name>.yaml".
+             // We can provide a helpful error if legacy file exists.
+             let base = find_profile_folder(profile_folder)?;
+             let legacy_yaml = base.join(format!("{}.yaml", profile_name));
+             if legacy_yaml.exists() {
+                 return specific_fail!(format!("Found legacy profile at {}. Please move it to {}/profile.yaml", legacy_yaml.display(), profile_dir.display()));
+             }
+             
+             let legacy_json = base.join(format!("{}.json", profile_name));
+             if legacy_json.exists() {
+                 return specific_fail!(format!("Found legacy JSON profile at {}. Please migrate.", legacy_json.display()));
              }
 
             specific_fail!(format!("{} does not exist.", profile_path.display()))
@@ -179,17 +187,81 @@ impl Profile {
         Ok(())
     }
 
+    fn sync_markdown_files(&self, profile_dir: &Path) -> Result<()> {
+        let mut kept_files = std::collections::HashSet::new();
+
+        for note in &self.notes {
+            let sanitized = crate::utils::sanitize_filename(&note.title);
+            let filename = if sanitized.is_empty() {
+                format!("note_{}.md", note.id)
+            } else {
+                format!("{}.md", sanitized)
+            };
+            let file_path = profile_dir.join(&filename);
+
+            let mut content = String::from("---\n");
+            content.push_str(&format!("id: {}\n", note.id));
+            content.push_str(&format!("title: {}\n", note.title));
+            content.push_str(&format!("status: {}\n", note.status));
+            content.push_str(&format!("last_touched: {}\n", note.last_touched));
+            content.push_str("---\n");
+            content.push_str(&note.body);
+
+            // Fail gracefully
+            if let Ok(mut f) = File::create(&file_path) {
+                let _ = f.write_all(content.as_bytes());
+            }
+            kept_files.insert(filename);
+        }
+
+        // Cleanup orphans
+        if let Ok(entries) = std::fs::read_dir(profile_dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.extension().and_then(|e| e.to_str()) == Some("md") {
+                    if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                        if !kept_files.contains(name) {
+                            let _ = std::fs::remove_file(path);
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    fn delete_markdown_files(&self, profile_dir: &Path) -> Result<()> {
+        if let Ok(entries) = std::fs::read_dir(profile_dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.extension().and_then(|e| e.to_str()) == Some("md") {
+                    let _ = std::fs::remove_file(path);
+                }
+            }
+        }
+        Ok(())
+    }
+
     /// save the profile back to file (either plaintext or encrypted)
     pub fn save_to_file(&mut self, 
                         profile_name: &str, 
                         profile_folder: &Option<String>, 
                         key: Option<&String>, 
                         new_profile: bool, 
+                        encrypting: bool,
                         yes: bool,
                         fingerprint: &u64) -> Result<()> {
         
-        let mut profile_path = find_profile_folder(profile_folder)?;
-        profile_path.push(&(profile_name.to_string() + ".yaml"));
+        let mut profile_dir = find_profile_folder(profile_folder)?;
+        profile_dir.push(profile_name);
+        
+        // Create directory if it doesn't exist
+        if !profile_dir.exists() {
+             std::fs::create_dir_all(&profile_dir)?;
+        }
+        
+        let profile_path = profile_dir.join("profile.yaml");
 
         if new_profile && profile_path.exists() && !yes {
             let message = format!("profile {} already exists would you like to overwrite it?\n",
@@ -208,7 +280,7 @@ impl Profile {
         }
 
         // open file
-        let mut file = File::create(profile_path)?;
+        let mut file = File::create(&profile_path)?;
 
         // encode to buffer
         let yaml_prof = serde_yaml::to_string(&self).map_err(|e| format!("Serialization error: {}", e))?;
@@ -227,6 +299,13 @@ impl Profile {
 
         // write buffer to file
         file.write_all(&buffer)?;
+
+        // Handle markdown export
+        if !self.encrypted {
+            let _ = self.sync_markdown_files(&profile_dir);
+        } else if encrypting {
+            let _ = self.delete_markdown_files(&profile_dir);
+        }
 
         Ok(())
     }
@@ -268,7 +347,7 @@ impl Profile {
                                     false)?;
              
              // Save target
-             trans_profile.save_to_file(target_profile_name, profile_folder, key, false, yes, &trans_fingerprint)?;
+             trans_profile.save_to_file(target_profile_name, profile_folder, key, false, false, yes, &trans_fingerprint)?;
              
              // Remove from source
              self.notes.remove(pos);
@@ -573,6 +652,123 @@ impl Profile {
         } else {
             println!("nothing found");
         }
+        Ok(())
+    }
+    /// sync notes with markdown files in the profile folder
+    pub fn sync(&mut self, profile_name: &str, profile_folder: &Option<String>) -> Result<()> {
+        if self.encrypted {
+            return specific_fail_str!("synchronization is only supported for plaintext profiles");
+        }
+
+        let mut profile_dir = find_profile_folder(profile_folder)?;
+        profile_dir.push(profile_name);
+
+        if !profile_dir.exists() {
+            return specific_fail!(format!("profile directory {} does not exist", profile_dir.display()));
+        }
+
+        let mut new_notes_raw: Vec<(String, String)> = vec![];
+        let mut seen_ids = std::collections::HashSet::new();
+        let mut updated_notes = vec![];
+
+        let entries = std::fs::read_dir(&profile_dir)?;
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().and_then(|e| e.to_str()) == Some("md") {
+                let filename = path.file_name().and_then(|n| n.to_str()).unwrap_or("").to_string();
+                let mut content = String::new();
+                if let Ok(mut f) = File::open(&path) {
+                    let _ = f.read_to_string(&mut content);
+                }
+
+                // Check for valid frontmatter
+                if content.starts_with("---\n") {
+                    let parts: Vec<&str> = content.splitn(3, "---\n").collect();
+                    if parts.len() == 3 {
+                        let frontmatter = parts[1];
+                        let body = parts[2].to_string();
+
+                        // Parse frontmatter manually to avoid heavy dependencies if possible
+                        let mut id = None;
+                        let mut title = None;
+                        let mut status = None;
+                        // last_touched will be updated if body/title changes
+
+                        for line in frontmatter.lines() {
+                            if line.starts_with("id: ") {
+                                id = line[4..].parse::<usize>().ok();
+                            } else if line.starts_with("title: ") {
+                                title = Some(line[7..].to_string());
+                            } else if line.starts_with("status: ") {
+                                let s_str = line[8..].trim();
+                                status = crate::utils::extract_status(if s_str.is_empty() { None } else { Some(s_str.to_string()) }).ok().flatten();
+                            }
+                        }
+
+                        if let Some(id_val) = id {
+                            seen_ids.insert(id_val);
+                            // Find in current notes
+                            if let Some(note) = self.notes.iter_mut().find(|n| n.id == id_val) {
+                                let mut changed = false;
+                                if let Some(t) = title {
+                                    if note.title != t {
+                                        note.title = t;
+                                        changed = true;
+                                    }
+                                }
+                                if let Some(s) = status {
+                                    if note.status != s {
+                                        note.status = s;
+                                        changed = true;
+                                    }
+                                }
+                                if note.body != body {
+                                    note.body = body;
+                                    changed = true;
+                                }
+
+                                if changed {
+                                    note.last_touched = chrono::Local::now().format(DATEFMT).to_string();
+                                }
+                                updated_notes.push(note.clone());
+                            }
+                            continue;
+                        }
+                    }
+                }
+
+                // If we reach here, it's either invalid frontmatter or new note
+                new_notes_raw.push((filename, content));
+                let _ = std::fs::remove_file(path);
+            }
+        }
+
+        // Deletion: keep only notes that were seen in valid md files
+        self.notes.retain(|n| seen_ids.contains(&n.id));
+
+        // Add new/invalid notes
+        for (filename, content) in new_notes_raw {
+            let title = if filename.ends_with(".md") {
+                filename[..filename.len() - 3].to_string()
+            } else {
+                filename
+            };
+            
+            // If it had frontmatter but was "invalid" (e.g. no ID), strip it for the body
+            let body = if content.starts_with("---\n") {
+                 let parts: Vec<&str> = content.splitn(3, "---\n").collect();
+                 if parts.len() == 3 { parts[2].to_string() } else { content }
+            } else {
+                content
+            };
+
+            self.add_note(&title, &[body], None, false, false, false)?;
+        }
+
+        // Final sync of markdown files to disk based on new profile state
+        self.sync_markdown_files(&profile_dir)?;
+
+        println!("synchronization complete");
         Ok(())
     }
 }

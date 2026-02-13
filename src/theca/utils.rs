@@ -179,6 +179,17 @@ pub fn format_field(value: &str, width: usize, truncate: bool) -> String {
     }
 }
 
+pub fn sanitize_filename(name: &str) -> String {
+    name.chars()
+        .map(|c| match c {
+            'a'..='z' | 'A'..='Z' | '0'..='9' | '-' | '_' | ' ' => c,
+            _ => '_',
+        })
+        .collect::<String>()
+        .trim()
+        .to_string()
+}
+
 fn print_header(line_format: &LineFormat) -> Result<()> {
     let mut stdout = stdout();
     let column_seperator: String = repeat(' ')
@@ -335,15 +346,19 @@ pub fn path_to_profile_name(profile_path: &PathBuf) -> Result<String> {
 pub fn profiles_in_folder(folder: &Path) -> Result<()> {
     if folder.is_dir() {
         println!("# profiles in {}", folder.display());
-        for file in read_dir(folder)? {
-            let file = file?;
-            let is_prof = validate_profile_from_path(&file.path());
-            if is_prof.0 {
-                let mut msg = path_to_profile_name(&file.path())?;
-                if is_prof.1 {
-                    msg = format!("{} [encrypted]", msg);
+        for entry in read_dir(folder)? {
+            let entry = entry?;
+            let path = entry.path();
+            if path.is_dir() {
+                let profile_yaml = path.join("profile.yaml");
+                let is_prof = validate_profile_from_path(&profile_yaml);
+                if is_prof.0 {
+                    let mut msg = path_to_profile_name(&path)?; // path is the dir, stem is dir name
+                    if is_prof.1 {
+                        msg = format!("{} [encrypted]", msg);
+                    }
+                    println!("    {}", msg);
                 }
-                println!("    {}", msg);
             }
         }
     }

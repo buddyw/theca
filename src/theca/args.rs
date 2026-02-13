@@ -158,5 +158,8 @@ pub enum Commands {
         /// Filter by status
         #[arg(long)]
         status: Option<String>,
-    }
+    },
+
+    /// Sync profile with markdown files
+    Sync,
 }

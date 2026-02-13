@@ -123,7 +123,7 @@ pub fn r#run() -> Result<()> {
                              false, 
                              *editor,
                              true)?;
-             profile.save_to_file(&cli.profile, &cli.profile_folder, cli.key.as_ref(), false, cli.yes, &fingerprint)?;
+             profile.save_to_file(&cli.profile, &cli.profile_folder, cli.key.as_ref(), false, false, cli.yes, &fingerprint)?;
 
         }
         Some(Commands::Edit { id, title, body, status, editor }) => {
@@ -141,19 +141,19 @@ pub fn r#run() -> Result<()> {
             };
             
             profile.edit_note(*id, title, body, &st, false, flags)?;
-            profile.save_to_file(&cli.profile, &cli.profile_folder, cli.key.as_ref(), false, cli.yes, &fingerprint)?;
+            profile.save_to_file(&cli.profile, &cli.profile_folder, cli.key.as_ref(), false, false, cli.yes, &fingerprint)?;
 
         }
         Some(Commands::Del { id }) => {
             profile.delete_note(id);
-            profile.save_to_file(&cli.profile, &cli.profile_folder, cli.key.as_ref(), false, cli.yes, &fingerprint)?;
+            profile.save_to_file(&cli.profile, &cli.profile_folder, cli.key.as_ref(), false, false, cli.yes, &fingerprint)?;
         }
         Some(Commands::Transfer { id, target_profile }) => {
              // transfer_note saves both?
              profile.transfer_note(*id, target_profile, &cli.profile, &cli.profile_folder, cli.key.as_ref(), cli.encrypted, cli.yes)?;
              // transfer_note in profile.rs removes from self and saves target.
              // We need to save self.
-             profile.save_to_file(&cli.profile, &cli.profile_folder, cli.key.as_ref(), false, cli.yes, &fingerprint)?;
+             profile.save_to_file(&cli.profile, &cli.profile_folder, cli.key.as_ref(), false, false, cli.yes, &fingerprint)?;
         }
         Some(Commands::NewProfile { name }) => {
              // profile is empty from `from_scratch`
@@ -167,7 +167,7 @@ pub fn r#run() -> Result<()> {
              } else {
                  None
              };
-             profile.save_to_file(name, &cli.profile_folder, key.as_ref(), true, cli.yes, &0)?;
+             profile.save_to_file(name, &cli.profile_folder, key.as_ref(), true, false, cli.yes, &0)?;
              println!("created profile '{}'", name);
         }
         Some(Commands::EncryptProfile { new_key }) => {
@@ -178,7 +178,7 @@ pub fn r#run() -> Result<()> {
                   };
                   let mut new_profile = profile.clone();
                   new_profile.encrypted = true;
-                  new_profile.save_to_file(&cli.profile, &cli.profile_folder, Some(&key), false, cli.yes, &0)?;
+                  new_profile.save_to_file(&cli.profile, &cli.profile_folder, Some(&key), false, true, cli.yes, &0)?;
                   println!("encrypting '{}'", cli.profile);
              } else {
                  println!("Profile '{}' is already encrypted.", cli.profile);
@@ -188,7 +188,7 @@ pub fn r#run() -> Result<()> {
              if profile.encrypted {
                   let mut new_profile = profile.clone();
                   new_profile.encrypted = false;
-                  new_profile.save_to_file(&cli.profile, &cli.profile_folder, None, false, cli.yes, &0)?;
+                  new_profile.save_to_file(&cli.profile, &cli.profile_folder, None, false, false, cli.yes, &0)?;
                   println!("decrypting '{}'", cli.profile);
              } else {
                  println!("Profile '{}' is not encrypted.", cli.profile);
@@ -213,7 +213,7 @@ pub fn r#run() -> Result<()> {
         }
         Some(Commands::Clear) => {
             profile.clear(cli.yes)?;
-            profile.save_to_file(&cli.profile, &cli.profile_folder, cli.key.as_ref(), false, cli.yes, &fingerprint)?;
+            profile.save_to_file(&cli.profile, &cli.profile_folder, cli.key.as_ref(), false, false, cli.yes, &fingerprint)?;
         }
         Some(Commands::List { limit, datesort, reverse, yaml, condensed, status }) => {
              let flags = ProfileFlags {
@@ -229,6 +229,10 @@ pub fn r#run() -> Result<()> {
                 None
              };
              profile.list_notes(limit.unwrap_or(0), flags, st)?;
+        }
+        Some(Commands::Sync) => {
+            profile.sync(&cli.profile, &cli.profile_folder)?;
+            profile.save_to_file(&cli.profile, &cli.profile_folder, cli.key.as_ref(), false, false, cli.yes, &fingerprint)?;
         }
         None => {
             if let Some(id) = cli.id {

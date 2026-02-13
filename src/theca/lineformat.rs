@@ -105,11 +105,13 @@ impl LineFormat {
 
         // check to make sure our new line format isn't bigger than the console
         let line_width = line_format.line_width();
-        if console_width > 0 && line_width > console_width &&
-           (line_format.title_width - (line_width - console_width)) > 0 {
-            // if it is trim text from the title width since it is always the biggest...
-            // if there isn't any statuses, also give the title the colsep char space
-            line_format.title_width -= line_width - console_width;
+        if console_width > 0 && line_width > console_width {
+            let diff = line_width - console_width;
+            if line_format.title_width > diff {
+                line_format.title_width -= diff;
+            } else {
+                line_format.title_width = 0;
+            }
         }
 
         Ok(line_format)
