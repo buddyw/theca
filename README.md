@@ -1,10 +1,10 @@
 
-#  _   _                    
-# | |_| |__   ___  ___ __ _
-# | __|  _ \ / _ \/ __/ _` |
-# | |_| | | |  __/ (_| (_| |
-#  \__|_| |_|\___|\___\__,_|
-#
+	#  _   _                    
+	# | |_| |__   ___  ___ __ _
+	# | __|  _ \ / _ \/ __/ _` |
+	# | |_| | | |  __/ (_| (_| |
+	#  \__|_| |_|\___|\___\__,_|
+	#
 
 ![example usage of theca](screenshots/main.png)
 
@@ -42,7 +42,7 @@ A simple, fully featured, command line note taking tool written in [*Rust*](http
 Ensure you have [Rust and Cargo installed](https://rustup.rs/).
 
 ```bash
-git clone https://github.com/pwoolcoc/theca.git
+git clone https://github.com/buddyw/theca.git
 cd theca
 cargo install --path .
 ```
