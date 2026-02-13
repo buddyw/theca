@@ -265,7 +265,21 @@ pub fn find_profile_folder(profile_folder: &Option<String>) -> Result<PathBuf> {
         Ok(PathBuf::from(pf))
     } else {
         match dirs::home_dir() {
-            Some(p) => Ok(p.join(".theca")),
+            Some(p) => {
+                let default_path = p.join(".theca");
+                if default_path.is_file() {
+                    let mut file = File::open(&default_path)?;
+                    let mut contents = String::new();
+                    file.read_to_string(&mut contents)?;
+                    let trimmed = contents.trim();
+                    if trimmed.is_empty() {
+                         return specific_fail_str!("~/.theca is a file but is empty. It should contain a path to the profile directory.");
+                    }
+                    Ok(PathBuf::from(trimmed))
+                } else {
+                    Ok(default_path)
+                }
+            },
             None => specific_fail_str!("failed to find your home directory"),
         }
     }
